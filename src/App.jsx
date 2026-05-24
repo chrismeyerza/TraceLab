@@ -92,8 +92,11 @@ export default function App() {
   async function handleFile(file) {
     setImportStatus({ status: 'loading', message: `Parsing ${file.name}...` });
     try {
-      const buf = await file.arrayBuffer();
-      const { sessionLabel, shots: newShots } = parseForesightFile(buf, file.name);
+      // CSV must be read as text (preserves UTF-8 BOM detection inside parser);
+      // xlsx needs ArrayBuffer for the binary workbook format.
+      const isCsv = /\.csv$/i.test(file.name);
+      const data = isCsv ? await file.text() : await file.arrayBuffer();
+      const { sessionLabel, shots: newShots } = parseForesightFile(data, file.name);
       if (newShots.length === 0) {
         setImportStatus({ status: 'error', message: 'No shots found in file' });
         return;

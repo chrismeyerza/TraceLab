@@ -36,11 +36,11 @@ export default function EmptyState({ onFile, importStatus }) {
       >
         <div className="dropzone-icon">⊕</div>
         <div className="dropzone-title">Drop your first Foresight export</div>
-        <div className="dropzone-sub">.xlsx or .xls · drag here or click to browse</div>
+        <div className="dropzone-sub">.csv, .xlsx or .xls · drag here or click to browse</div>
         <input
           ref={fileRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".csv,.xlsx,.xls"
           style={{ display: 'none' }}
           onChange={(e) => e.target.files[0] && onFile(e.target.files[0])}
         />

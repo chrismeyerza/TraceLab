@@ -44,7 +44,7 @@ export default function SessionsView({ sessions, onFile, importStatus, onDeleteS
           <input
             ref={fileRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".csv,.xlsx,.xls"
             style={{ display: 'none' }}
             onChange={(e) => e.target.files[0] && onFile(e.target.files[0])}
           />
