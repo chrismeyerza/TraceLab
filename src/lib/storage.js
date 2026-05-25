@@ -1,8 +1,12 @@
 // Persistent shot storage via IndexedDB. Holds tens of thousands of shots
 // comfortably. Data lives in the user's browser only — no server, no sync.
+//
+// NOTE on DB_NAME: kept as 'foresight-analytics' (the original name from v1.1)
+// to avoid migrating every existing user's data to a fresh DB on rebrand. The
+// name is internal — never user-visible — so the legacy value is harmless.
 
 const DB_NAME = 'foresight-analytics';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // bumped from 1 — see onupgradeneeded
 const STORE_SHOTS = 'shots';
 const STORE_META = 'meta';
 
@@ -11,15 +15,30 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_SHOTS)) {
+      const oldVersion = e.oldVersion;
+      // v0 -> v1: initial schema
+      if (oldVersion < 1) {
         const store = db.createObjectStore(STORE_SHOTS, { keyPath: 'id', autoIncrement: true });
         store.createIndex('sessionId', 'sessionId', { unique: false });
         store.createIndex('club', 'club', { unique: false });
-        // Unique dedup index lets us silently drop duplicate re-imports.
         store.createIndex('dedup', 'dedup', { unique: true });
-      }
-      if (!db.objectStoreNames.contains(STORE_META)) {
         db.createObjectStore(STORE_META, { keyPath: 'key' });
+      }
+      // v1 -> v2: drop the UNIQUE constraint on dedup. Two reasons:
+      //   1. The new dedup formula (timestamp + ballSpeed, no club) reduces
+      //      uniqueness — collisions are still vanishingly rare in practice
+      //      but the index shouldn't enforce strict uniqueness anymore.
+      //   2. Editing a shot's club label used to cascade-break the dedup key
+      //      (old key included club). Now we recompute keys in the migration
+      //      below; the unique constraint would block legitimate updates.
+      // We achieve this by deleting and recreating the index without `unique`.
+      if (oldVersion < 2) {
+        const tx = e.target.transaction;
+        const store = tx.objectStore(STORE_SHOTS);
+        if (store.indexNames.contains('dedup')) {
+          store.deleteIndex('dedup');
+        }
+        store.createIndex('dedup', 'dedup', { unique: false });
       }
     };
     req.onsuccess = (e) => resolve(e.target.result);
@@ -38,11 +57,32 @@ export async function getAllShots() {
 }
 
 /**
- * Insert shots, skipping those that violate the unique dedup index.
+ * Compute the canonical dedup key for a shot. Format used since v1.2:
+ *   "{ISO timestamp}|{ballSpeed}"
+ * Deliberately omits club — that lets a user relabel a mislabelled shot
+ * without changing its identity, so re-importing the original CSV still
+ * dedupes correctly.
+ */
+export function makeDedupKey(shot) {
+  return `${shot.createdAt}|${shot.ballSpeed}`;
+}
+
+/**
+ * Insert shots, skipping those whose dedup key already exists in storage.
+ * Unlike the previous version, we no longer rely on the unique-index constraint
+ * (which the v2 migration removed). Instead we check the existing dedup set
+ * before adding. Slightly more work per import but defensible: it gives us
+ * control over the dedup logic in JS rather than relying on a DB constraint
+ * that we'd have to keep in sync.
+ *
  * Returns { added, skipped }.
  */
 export async function addShots(shots) {
   const db = await openDB();
+  // Build a set of existing dedup keys first, so the insert loop is just an
+  // O(1) lookup per shot. Cheap even for 100k+ shots.
+  const existing = await getAllShots();
+  const seen = new Set(existing.map((s) => s.dedup));
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_SHOTS, 'readwrite');
     const store = tx.objectStore(STORE_SHOTS);
@@ -54,13 +94,20 @@ export async function addShots(shots) {
       return;
     }
     shots.forEach((shot) => {
+      if (seen.has(shot.dedup)) {
+        skipped++;
+        if (--pending === 0) resolve({ added, skipped });
+        return;
+      }
+      seen.add(shot.dedup);
       const req = store.add(shot);
       req.onsuccess = () => {
         added++;
         if (--pending === 0) resolve({ added, skipped });
       };
       req.onerror = (e) => {
-        // Dedup hit — perfectly normal when re-importing the same file.
+        // Shouldn't fire in normal use now that uniqueness isn't enforced,
+        // but guard for it anyway (e.g. quota exceeded, corrupt record).
         skipped++;
         e.preventDefault();
         if (--pending === 0) resolve({ added, skipped });
@@ -97,4 +144,131 @@ export async function deleteSession(sessionId) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+/**
+ * Delete a single shot by its IndexedDB id.
+ */
+export async function deleteShot(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SHOTS, 'readwrite');
+    tx.objectStore(STORE_SHOTS).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Update fields on an existing shot. Reads the current record, merges `patch`
+ * on top, and writes back. If the patch changes `club` (the most common case
+ * for relabel), the dedup key is NOT regenerated — by design, dedup uses only
+ * timestamp + ballSpeed since v1.2, so club edits are safe.
+ *
+ * Returns the updated shot, or null if the id wasn't found.
+ */
+export async function updateShot(id, patch) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SHOTS, 'readwrite');
+    const store = tx.objectStore(STORE_SHOTS);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const current = getReq.result;
+      if (!current) {
+        resolve(null);
+        return;
+      }
+      const updated = { ...current, ...patch };
+      const putReq = store.put(updated);
+      putReq.onsuccess = () => resolve(updated);
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Update many shots at once. Same semantics as updateShot but in a single
+ * transaction — atomic, faster, and won't leave the DB in a half-updated state
+ * if anything fails. `updates` is an array of {id, patch} objects.
+ */
+export async function updateShots(updates) {
+  if (!updates.length) return [];
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SHOTS, 'readwrite');
+    const store = tx.objectStore(STORE_SHOTS);
+    const results = [];
+    let pending = updates.length;
+    updates.forEach(({ id, patch }) => {
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const current = getReq.result;
+        if (!current) {
+          if (--pending === 0) resolve(results);
+          return;
+        }
+        const updated = { ...current, ...patch };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => {
+          results.push(updated);
+          if (--pending === 0) resolve(results);
+        };
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * One-off migration: rewrite all existing shots' dedup keys using the new
+ * formula (timestamp + ballSpeed, no club). Necessary because pre-v1.2 records
+ * have dedup keys that include club — if we left them, re-importing a CSV
+ * for a session whose shots have been relabelled would create duplicates,
+ * since the old key embeds the OLD club label and the new shots would be
+ * computed with the (probably different) NEW label.
+ *
+ * Safe to run multiple times: idempotent. Returns the count of records touched.
+ */
+export async function migrateDedupKeys() {
+  const META_KEY = 'dedup-migration-v2';
+  const db = await openDB();
+  // Check whether the migration has already run
+  const already = await new Promise((resolve) => {
+    const tx = db.transaction(STORE_META, 'readonly');
+    const req = tx.objectStore(STORE_META).get(META_KEY);
+    req.onsuccess = () => resolve(req.result?.value === true);
+    req.onerror = () => resolve(false);
+  });
+  if (already) return 0;
+
+  const shots = await getAllShots();
+  const touched = [];
+  for (const s of shots) {
+    const newKey = `${s.createdAt}|${s.ballSpeed}`;
+    if (s.dedup !== newKey) {
+      touched.push({ ...s, dedup: newKey });
+    }
+  }
+  if (touched.length) {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_SHOTS, 'readwrite');
+      const store = tx.objectStore(STORE_SHOTS);
+      for (const s of touched) store.put(s);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  // Mark migration as done
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_META, 'readwrite');
+    tx.objectStore(STORE_META).put({ key: META_KEY, value: true });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  return touched.length;
 }

@@ -1,30 +1,41 @@
 import { useState, useEffect, useMemo } from 'react';
 import { orderedClubs } from './lib/clubs';
 import { loadUnits, saveUnits } from './lib/units';
-import { getAllShots, addShots, clearAllShots, deleteSession } from './lib/storage';
+import {
+  getAllShots, addShots, clearAllShots, deleteSession,
+  deleteShot, updateShot, updateShots, migrateDedupKeys,
+} from './lib/storage';
 import { parseForesightFile } from './lib/parser';
 import TopBar from './components/TopBar';
 import FilterBar from './components/FilterBar';
+import ScopeSummary from './components/ScopeSummary';
 import EmptyState from './components/EmptyState';
 import ConfirmDialog from './components/ConfirmDialog';
 import OverviewView from './views/OverviewView';
 import StrikeView from './views/StrikeView';
 import FlightView from './views/FlightView';
 import ShapeView from './views/ShapeView';
+import ShotsView from './views/ShotsView';
 import SessionsView from './views/SessionsView';
 
 /**
  * Top-level component. Owns all global state:
- *   - shots (loaded from IndexedDB on mount)
- *   - current view (overview/strike/flight/shape/sessions)
- *   - selected clubs (filter)
+ *   - shots (loaded from IndexedDB on mount, with one-off migration applied)
+ *   - current view
+ *   - filters: clubs (multi-select), time period (single-select), pinned session
  *   - units (yds/mph vs m/km-h, persisted in localStorage)
- *   - import status and confirmation dialogs
+ *   - import status, confirmation dialogs
+ *
+ * The filteredShots memo intersects all three filters with AND semantics, then
+ * passes that derived set down to every analytical view. The Shots view also
+ * receives the same filtered set so editing happens in scope.
  */
 export default function App() {
   const [shots, setShots] = useState([]);
   const [view, setView] = useState('sessions');
   const [selectedClubs, setSelectedClubs] = useState([]);
+  const [timeFilter, setTimeFilter] = useState('all');
+  const [pinnedSession, setPinnedSession] = useState(null); // {id, label} or null
   const [loading, setLoading] = useState(true);
   const [importStatus, setImportStatus] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -38,10 +49,13 @@ export default function App() {
     saveUnits(next);
   };
 
-  // Initial load from IndexedDB
+  // Initial load. Runs the dedup-key migration on first load after upgrade,
+  // then reads everything fresh so the in-memory state reflects the migrated
+  // dedup values. Migration is idempotent so re-runs are harmless.
   useEffect(() => {
     (async () => {
       try {
+        await migrateDedupKeys();
         const all = await getAllShots();
         setShots(all);
       } catch (e) {
@@ -54,19 +68,34 @@ export default function App() {
 
   const allClubs = useMemo(() => orderedClubs([...new Set(shots.map((s) => s.club))]), [shots]);
 
-  // Default-select every club when data first loads
+  // Default-select every club when data first loads. Also reset when the
+  // underlying club set changes (e.g. after a bulk relabel that introduces
+  // a new club or removes an old one).
   useEffect(() => {
-    if (allClubs.length && selectedClubs.length === 0) {
-      setSelectedClubs(allClubs);
-    }
-  }, [allClubs, selectedClubs.length]);
+    if (allClubs.length === 0) return;
+    // Keep selection if every selected club is still present; otherwise reset
+    const stillValid = selectedClubs.filter((c) => allClubs.includes(c));
+    if (stillValid.length === 0) setSelectedClubs(allClubs);
+    else if (stillValid.length !== selectedClubs.length) setSelectedClubs(stillValid);
+  }, [allClubs.join(',')]); // depend on the actual club list, not array identity
 
-  const filteredShots = useMemo(() => {
-    if (!selectedClubs.length) return shots;
-    return shots.filter((s) => selectedClubs.includes(s.club));
-  }, [shots, selectedClubs]);
+  /**
+   * Decide whether a shot's createdAt timestamp falls inside the active time
+   * window. Returns true for everything if no filter, or if a shot has no
+   * timestamp (we don't want to silently drop those).
+   */
+  const inTimeWindow = (shot, sessionsForLast) => {
+    if (timeFilter === 'all') return true;
+    if (!shot.createdAt) return true;
+    const t = new Date(shot.createdAt).getTime();
+    if (timeFilter === '30d') return t >= Date.now() - 30 * 86400000;
+    if (timeFilter === '90d') return t >= Date.now() - 90 * 86400000;
+    if (timeFilter === 'last') return sessionsForLast.has(shot.sessionId);
+    return true;
+  };
 
-  // Derive sessions from shots (group by sessionId)
+  // Derive sessions from shots (group by sessionId). Done before filteredShots
+  // because filteredShots needs the "newest session" set for the 'last' filter.
   const sessions = useMemo(() => {
     const m = new Map();
     shots.forEach((s) => {
@@ -89,11 +118,25 @@ export default function App() {
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [shots]);
 
+  // For 'last session' filter: keep just the newest session's id.
+  const newestSessionIds = useMemo(() => {
+    const s = new Set();
+    if (sessions[0]) s.add(sessions[0].id);
+    return s;
+  }, [sessions]);
+
+  const filteredShots = useMemo(() => {
+    return shots.filter((s) => {
+      if (selectedClubs.length && !selectedClubs.includes(s.club)) return false;
+      if (pinnedSession && s.sessionId !== pinnedSession.id) return false;
+      if (!inTimeWindow(s, newestSessionIds)) return false;
+      return true;
+    });
+  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds]);
+
   async function handleFile(file) {
     setImportStatus({ status: 'loading', message: `Parsing ${file.name}...` });
     try {
-      // CSV must be read as text (preserves UTF-8 BOM detection inside parser);
-      // xlsx needs ArrayBuffer for the binary workbook format.
       const isCsv = /\.csv$/i.test(file.name);
       const data = isCsv ? await file.text() : await file.arrayBuffer();
       const { sessionLabel, shots: newShots } = parseForesightFile(data, file.name);
@@ -119,6 +162,7 @@ export default function App() {
     await clearAllShots();
     setShots([]);
     setSelectedClubs([]);
+    setPinnedSession(null);
     setConfirmClear(false);
   }
 
@@ -126,7 +170,32 @@ export default function App() {
     await deleteSession(id);
     const all = await getAllShots();
     setShots(all);
+    // If the deleted session was pinned, unpin
+    if (pinnedSession?.id === id) setPinnedSession(null);
     setConfirmDelete(null);
+  }
+
+  async function handleDeleteShot(id) {
+    await deleteShot(id);
+    setShots((curr) => curr.filter((s) => s.id !== id));
+  }
+
+  async function handleUpdateShot(id, patch) {
+    const updated = await updateShot(id, patch);
+    if (updated) setShots((curr) => curr.map((s) => (s.id === id ? updated : s)));
+  }
+
+  async function handleUpdateShots(updates) {
+    const result = await updateShots(updates);
+    if (result.length) {
+      const byId = new Map(result.map((r) => [r.id, r]));
+      setShots((curr) => curr.map((s) => byId.get(s.id) || s));
+    }
+  }
+
+  function handlePinSession(s) {
+    setPinnedSession({ id: s.id, label: s.label });
+    setView('overview'); // jump to overview so the user sees the filtered data
   }
 
   const totalSessions = sessions.length;
@@ -157,7 +226,25 @@ export default function App() {
         ) : (
           <>
             {view !== 'sessions' && allClubs.length > 0 && (
-              <FilterBar clubs={allClubs} selected={selectedClubs} setSelected={setSelectedClubs} />
+              <>
+                <FilterBar
+                  clubs={allClubs}
+                  selected={selectedClubs}
+                  setSelected={setSelectedClubs}
+                  timeFilter={timeFilter}
+                  setTimeFilter={setTimeFilter}
+                  pinnedSession={pinnedSession}
+                  setPinnedSession={setPinnedSession}
+                />
+                <ScopeSummary
+                  shotsShown={filteredShots.length}
+                  totalShots={totalShots}
+                  selectedClubs={selectedClubs}
+                  allClubs={allClubs}
+                  timeFilter={timeFilter}
+                  pinnedSession={pinnedSession}
+                />
+              </>
             )}
             {view === 'overview' && (
               <OverviewView shots={filteredShots} sessions={sessions} rightHanded={rightHanded} units={units} />
@@ -165,6 +252,16 @@ export default function App() {
             {view === 'strike' && <StrikeView shots={filteredShots} units={units} />}
             {view === 'flight' && <FlightView shots={filteredShots} units={units} />}
             {view === 'shape' && <ShapeView shots={filteredShots} rightHanded={rightHanded} />}
+            {view === 'shots' && (
+              <ShotsView
+                shots={filteredShots}
+                units={units}
+                allClubs={allClubs}
+                onUpdateShot={handleUpdateShot}
+                onUpdateShots={handleUpdateShots}
+                onDeleteShot={handleDeleteShot}
+              />
+            )}
             {view === 'sessions' && (
               <SessionsView
                 sessions={sessions}
@@ -172,13 +269,14 @@ export default function App() {
                 importStatus={importStatus}
                 onDeleteSession={(id) => setConfirmDelete(id)}
                 onClearAll={() => setConfirmClear(true)}
+                onPinSession={handlePinSession}
               />
             )}
           </>
         )}
 
         <div className="footer">
-          <div>FORESIGHT ANALYTICS · LOCAL DATA · NO SYNC</div>
+          <div>TRACELAB · LOCAL DATA · NO SYNC</div>
           <div>
             <span className="v">●</span> ALL DATA STORED IN BROWSER · {totalShots.toLocaleString()} SHOTS
           </div>

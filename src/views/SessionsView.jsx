@@ -5,7 +5,7 @@ import { clubColor } from '../lib/clubs';
  * Sessions view: drop new exports, browse history, delete individual sessions
  * or wipe everything. Sessions are ordered newest-first.
  */
-export default function SessionsView({ sessions, onFile, importStatus, onDeleteSession, onClearAll }) {
+export default function SessionsView({ sessions, onFile, importStatus, onDeleteSession, onClearAll, onPinSession }) {
   const fileRef = useRef();
   const [dragging, setDragging] = useState(false);
   const totalShots = sessions.reduce((a, s) => a + s.count, 0);
@@ -121,7 +121,15 @@ export default function SessionsView({ sessions, onFile, importStatus, onDeleteS
                 </div>
                 <div>{s.count}</div>
                 <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>{s.id.slice(0, 14)}</div>
-                <div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '3px 8px', fontSize: 9 }}
+                    onClick={() => onPinSession(s)}
+                    title="Filter all views to this session"
+                  >
+                    VIEW
+                  </button>
                   <button
                     className="btn-danger"
                     style={{ padding: '3px 8px', fontSize: 9 }}

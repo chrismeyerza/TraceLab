@@ -308,8 +308,10 @@ export function parseForesightFile(input, fileName) {
         shot.curvature = null;
       }
 
-      // Dedup key: timestamp + club + ball speed — survives re-imports.
-      shot.dedup = `${shot.createdAt}|${shot.club}|${shot.ballSpeed}`;
+      // Dedup key: timestamp + ball speed. Deliberately omits club so that
+      // relabelling a shot (in the Shots view) doesn't change its identity —
+      // re-importing the original CSV after a relabel still dedupes correctly.
+      shot.dedup = `${shot.createdAt}|${shot.ballSpeed}`;
       return shot;
     })
     .filter((s) => s.ballSpeed != null); // drop entirely empty rows

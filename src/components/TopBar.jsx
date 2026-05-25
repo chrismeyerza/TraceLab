@@ -13,6 +13,7 @@ export default function TopBar({
 }) {
   const tabs = [
     ['sessions', 'Sessions'],
+    ['shots', 'Shots'],
     ['overview', 'Overview'],
     ['strike', 'Strike'],
     ['flight', 'Flight'],
