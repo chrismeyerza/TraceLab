@@ -12,18 +12,18 @@ export default function TopBar({
   lastSessionDate,
 }) {
   const tabs = [
+    ['sessions', 'Sessions'],
     ['overview', 'Overview'],
     ['strike', 'Strike'],
     ['flight', 'Flight'],
     ['shape', 'Shape'],
-    ['sessions', 'Sessions'],
   ];
   return (
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark"></span>
-        <span className="brand-name">Foresight</span>
-        <span className="brand-sub">Analytics · v1.1</span>
+        <span className="brand-name">TraceLab</span>
+        <span className="brand-sub">v1.2</span>
       </div>
       <nav className="nav">
         {tabs.map(([key, label]) => (

@@ -1,77 +1,89 @@
-# Changes — CSV import + derived metrics
+# Changes — Rebrand to TraceLab + strike tolerance context + stable session IDs
+
+This is PR 1 of two. Next PR will add the time-period filter, editable shot relabelling, and the dedupe-key change.
 
 ## Summary
 
-This change brings two things together:
+Three product changes plus a brand refresh:
 
-1. **CSV support.** FSX Play exports natively as `.csv`. The previous parser only accepted `.xlsx` workbooks. The new parser handles both formats — drop in a raw FSX Play CSV download and it Just Works. Existing `.xlsx` flows are unchanged.
+1. **Rebrand to TraceLab.** Brand name, page title, package name, GitHub Pages base path. Internal references to "Foresight" remain where they describe the *input data format* (the parser still parses Foresight files; the dropzone still says "Drop your Foresight export") — those are accurate and shouldn't change.
 
-2. **Derived metrics.** Five new fields are computed at parse time from the 26 columns FSX Play already gives us. No need to wait for Foresight to expose them in the export.
+2. **Sessions becomes the first menu item** and the default landing view. Reflects that "what's in my data" is the natural first question when you open the app.
+
+3. **Strike tolerance with context.** Strike location numbers like "10mm toe" now have meaning. Three pieces:
+   - **A tolerance reference card** at the top of Strike view explaining the centred / near / off / miss thresholds per club category (driver/wood/hybrid/iron/wedge).
+   - **Per-club tolerance rings** drawn on each Per-Club strike plot in green / amber / red, plus a count of how many shots fell in each band beneath each plot.
+   - **Rewrite of the strike zone table** to use per-club tolerance bands instead of flat 5/10/15mm thresholds. Speed-loss comparison is now per-club ("vs your centred 7-iron speed", not "vs all centred shots regardless of club").
+
+4. **Stable session IDs.** Session IDs are now derived from the earliest shot's timestamp (`S-20260520-1745`), not the import time. The same physical session imported twice gets the same ID. IDs sort chronologically, are human-readable, and don't depend on the random number generator.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/parser.js` | New CSV parser; new derivations; cascading-zero detection |
-| `src/components/EmptyState.jsx` | File picker accepts `.csv` |
-| `src/views/SessionsView.jsx` | File picker accepts `.csv` |
-| `src/App.jsx` | Reads CSV files as text, XLSX as ArrayBuffer |
+| `package.json` | Name `foresight-analytics` → `tracelab`; version 1.1.0 → 1.2.0; description tightened |
+| `index.html` | Page title → `TraceLab` |
+| `vite.config.js` | GitHub Pages base path → `/TraceLab/` (matches repo name) |
+| `src/components/TopBar.jsx` | Brand text → TraceLab; tabs reordered with Sessions first |
+| `src/App.jsx` | Default view → `sessions` |
+| `src/lib/parser.js` | Session ID derived from earliest shot timestamp, stable across re-imports |
+| `src/data/benchmarks.js` | New `STRIKE_BANDS` table; `classifyStrike()` and `getStrikeBands()` helpers |
+| `src/views/StrikeView.jsx` | New ToleranceReference card; tolerance rings in SinglePlot; rewritten StrikeZoneTable using per-club bands |
 
-No changes to data storage, components beyond file pickers, or the views themselves. The new derived fields are available on every shot object but no view consumes them yet — that comes in the next change, where we'll rework the Shape view to lead with Face to Path.
+## Strike tolerance bands — values & rationale
 
-## The derivations
+| Club category | Centred ≤ | Near ≤ | Off ≤ | Ideal radius |
+|---|---|---|---|---|
+| Driver | 12 mm | 22 mm | 35 mm | 12 mm |
+| Fairway woods | 10 mm | 18 mm | 28 mm | 10 mm |
+| Hybrids | 9 mm | 16 mm | 25 mm | 9 mm |
+| Irons | 8 mm | 15 mm | 25 mm | 8 mm |
+| Wedges | 8 mm | 14 mm | 22 mm | 8 mm |
 
-All five are computed at parse time and stored on the shot record so downstream code can read them like any other field.
+Centred-zone radii reflect the published sweet-zone size for typical equipment — drivers have larger sweet spots due to face area, MOI design, and trampoline effect; irons and wedges have small, demanding sweet zones. The bands then extend roughly proportionally to "what would still be considered a recoverable strike" by a typical fitter/coach. These are conservative-but-reasonable values; we can adjust if your own data suggests different (e.g. modern hollow-body irons have larger effective sweet zones than blades).
 
-| Field | Formula | Notes |
-|---|---|---|
-| `faceToPath` | `faceToTarget − clubPath` | Sign convention: positive = open-to-path (fade-biased for RH), negative = closed-to-path (draw-biased for RH). |
-| `spinLoft` | `loft − angleOfAttack` | Master variable for spin generation. Typical: driver 10–15°, mid-iron 20–25°, wedges 35–50°. |
-| `spinAxis` | `atan2(sideSpin, backSpin) × 180/π` | Tilt of the spin axis in degrees. Positive = tilted right (fade), negative = tilted left (draw). |
-| `runDistance` | `totalDist − carry` | Yards of roll after the ball lands. |
-| `curvature` | `offline − carry × tan(pushPull)` | Lateral deviation of the ball from its initial start line, isolating curve from start direction. Approximation that assumes a straight initial trajectory; fine for analysis. |
+The "% of ideal" metric in tooltips compares distance-from-centre to the **ideal radius** (not the face size). So 12mm on a 7-iron tooltip shows "150% of ideal" — meaning you were 50% beyond the centred-zone boundary. This matches how coaches actually talk about strike quality.
 
-Every derivation guards against null inputs. If any input is missing, the derived field is `null`, never `0` or `NaN`.
+## Stable session IDs — what changed
 
-## How the parser handles partial shots
+**Before:**
+```js
+sessionId = `S-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+// → "S-1747938291234-456"  (when imported)
+```
 
-Foresight occasionally captures ball flight without capturing the club (the unit's cameras see the ball but miss the club at impact). When this happens, the export looks like:
+**After:**
+```js
+// Derived from the earliest shot's timestamp after parse
+sessionId = `S-YYYYMMDD-HHMM`;
+// → "S-20260520-1745"  (when the session was actually played)
+```
 
-- **Ball flight columns** — real values (ball speed, carry, spin, launch angle, etc.)
-- **Club Speed column** — `3.4028e+38` (IEEE 754 single-precision FLT_MAX), Foresight's "no data" sentinel
-- **All other club-impact columns** — literal `0` as cascading placeholders (AoA, Club Path, Face to Target, Lie, Loft, Face Impact H/V, Closure Rate, Efficiency)
+Benefits:
+- Same physical session imported twice → same ID, no double-counting
+- IDs sort chronologically
+- Human-meaningful in URLs and logs
+- Collision risk is "two separate sessions starting in the exact same minute" — not a real-world concern
 
-The parser detects this pattern via the FLT_MAX → null conversion in `num()`, then nulls out the entire suite of club-dependent fields rather than trusting the cascading zeros. This is critical for data integrity: a zero Face-to-Target value would average in as "perfectly square" — wrong; a null explicitly tells downstream stats to skip the shot.
+## What's not changed (deliberately)
 
-**Net effect**: partial shots are kept (ball-flight statistics get the benefit of the real ball data) but contribute nothing to club-impact statistics. Strike heatmaps, Shape analysis, Face to Path averages all skip them automatically.
-
-## How the parser handles numeric club names
-
-FSX Play sometimes stores the club's loft as the name (`"50"` for a 50° wedge) with the category in Club Type (`"Wedge"`). The parser detects purely numeric names and converts them to a degree-suffixed string (`"50°"`) so they sort and display sensibly. Mixed alphabetic names (`"7i"`, `"PW"`) continue to flow through the existing alias table.
-
-## How the new CSV parser works
-
-A small (~50-line) custom CSV parser, not a library. FSX Play CSVs are well-formed and a dependency wasn't worth ~50KB of bundle size for a single-format reader.
-
-Handles:
-- UTF-8 BOM stripping (the FSX Play CSV starts with one)
-- CRLF and LF line endings
-- Quoted fields with embedded commas and escaped quotes (`""` → `"`)
-- The American `MM/DD/YYYY HH:MM:SS` timestamp format
-
-The parser's entry point — `parseForesightFile(input, fileName)` — accepts either an ArrayBuffer (xlsx) or a string (csv). The caller in `App.jsx` decides which based on file extension. XLSX path is unchanged from before.
+- **Dedupe key still includes club.** The user has identified this as a problem (shots get a different dedup key after relabelling, so re-imports treat them as new shots) but the fix lives in PR 2 alongside the editable Shots view. Doing them together avoids a confusing intermediate state.
+- **Time-period filter not added.** Coming in PR 2.
+- **Master strike heatmap doesn't show tolerance rings.** Shots in the heatmap span all clubs; a single ring would be misleading. The per-club plots are where tolerance context belongs.
 
 ## Testing
 
-Verified end-to-end against `session_09bb6ed1...csv` (22 shots, 6 × 50° wedge, 16 × 7i):
+- Production build clean: 49 modules, 177KB gzipped, no warnings beyond the existing xlsx chunk-size note.
+- Strike classification unit-tested for: irons, drivers (wider tolerance), wedges (numeric loft names like `50°`), null inputs (FLT_MAX case).
+- Session ID derivation verified: same physical session re-imported gives identical ID, IDs format correctly, all shots in a session share the ID.
+- Existing parser tests still pass.
 
-- All 22 shots parsed correctly
-- Shot 1 (the FLT_MAX row): ball-flight data preserved, all 8 club-impact fields correctly nulled
-- Clean shots: all derivations match hand-calculation
-- 7i shot Face to Path = -7.7° (closed to path = draw signal), Spin Axis = -17° (left tilt = draw curve), Curvature = -20.5 yds (significant left curve) — internally consistent
+## What to look at first
 
-Production build clean: 49 modules, 175 KB gzipped, no warnings beyond the existing xlsx chunk-size note.
+Drop a CSV in, then go to **Strike**. You should immediately see:
 
-## What's next
+1. The tolerance reference card — does it make the bands feel intuitive?
+2. The per-club plots now have three rings (green/amber/red) around centre, with a count of centred/near/off shots underneath. Does the visualization land?
+3. The zone table now has CENTRED / NEAR CENTRE / OFF CENTRE / MISS rows with an "avg distance from centre" column.
 
-Once this is merged, the Shape view rework comes next: promote Face to Path to the headline number, demote Face-to-Target and Club Path to supporting columns. The Overview "auto-insights" can also start using Spin Axis for shape descriptions.
+If something looks off or the values feel wrong for your skill level, tell me — these thresholds are calibrated to "typical accomplished amateur" and we can shift the goalposts.
