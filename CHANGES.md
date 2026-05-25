@@ -1,59 +1,50 @@
-# Changes — Strike view tightened up (PR 1.1)
+# Changes — Strike view polish (PR 1.2)
 
-Small but high-value follow-up to PR 1, addressing four pieces of feedback:
+Followup to PR 1.1, tightening the strike view based on user feedback:
 
-## 1. Reordered Strike view
+## 1. Dropped redundant columns
 
-The summary table now leads. The previous order put the heatmap and plots first; the summary lived at the bottom. But the summary is the densest, most actionable thing on the page — putting it first means the answer arrives before the visuals.
+The Tolerance Reference table had `IDEAL RADIUS` and `MISS >` columns:
 
-New order:
-1. **Tolerance reference** (the legend)
-2. **Strike summary** (the answer — % of shots in each band + ball-speed cost)
-3. **Per-club strike pattern** (the visuals)
+- `IDEAL RADIUS` was always identical to `CENTRED ≤` — two names for the same number. Confusing.
+- `MISS >` was always identical to `OFF ≤` — "miss" simply means "beyond the off boundary". Adds no information.
 
-## 2. Dropped the master heatmap
+Both columns dropped. Three columns remain: Centred / Near / Off — what they actually represent.
 
-The "all clubs mashed into a single SVG, coloured by ball speed" view was redundant. The per-club plots, combined with the FilterBar (which already lets you pick any combination of clubs), cover the same ground with strictly more information — separated by club so club-specific patterns are visible.
+## 2. Renamed `pctOfIdeal` to `pctOfCentred`
 
-Result: less visual clutter, smaller bundle, simpler view.
+In the strike-tooltip code and underlying data layer. The new label is "% of centred zone", which maps directly to the green band the user can see in the plot. Removes the awkward "% of ideal" phrase that didn't refer to anything visible.
 
-## 3. Beefed-up zone visualisation in the per-club plots
+## 3. Consistency zone (dashed dispersion ellipse) is now labelled
 
-The tolerance bands are now solid pale fills, not thin rings:
+The dashed blue ellipse that's been drawn around each club's strike centroid is a 1σ dispersion — meaning roughly 68% of shots fall inside it. Until now, nothing on the screen told you this. Added a small caption beneath each per-club plot:
 
-- **Green wash** — centred zone
-- **Amber wash** — near-centre annulus
-- **Red wash** — off-centre annulus
-- **No fill outside red** — miss territory, emphasised by absence
+> DASHED OUTLINE = CONSISTENCY ZONE · ~68% OF SHOTS · σ 4.2mm
 
-Each band has a small label (`CENTRED`, `NEAR`, `OFF`) at its top edge so the colour-to-meaning mapping is unambiguous on first viewing. After a few sessions you'd read the colours directly; the labels earn their place for the learning curve.
+The σ number is the combined standard deviation (√(σH² + σV²)) so users get a single tightness metric they can track over time.
 
-The opacity is deliberately muted: zones are context, dots are data. The dots remain the visual focus.
+## 4. New CONSISTENCY column in the strike summary table
 
-## 4. Table header alignment
+Each band (centred/near/off/miss) now has a `± σ` figure showing the spread of shots within that band. Useful because:
 
-Tables now have right-aligned headers for numeric columns. The previous CSS right-aligned numeric *data* cells but always left-aligned *header* cells, so the header text didn't sit above its column.
+- **Tight σ on centred** = pure strikes group repeatably. Good.
+- **Loose σ on centred** = centred but jittery; means the centred classification is doing some work for you (you're scraping in).
+- **Tight σ on off** = consistent miss pattern (e.g. always toe-high). Highly fixable.
+- **Loose σ on off** = random spray. Harder to fix; usually a tempo or fundamental issue.
 
-Fixed at the CSS level by adding `.data-table th.num` selector, then applying `className="num"` to numeric headers in StrikeView and ShapeView tables.
+Only displayed when the band has ≥3 shots (statistically meaningful threshold).
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/views/StrikeView.jsx` | Reordered sections, removed StrikePlot function, beefed up zones in SinglePlot, added zone labels, right-aligned numeric headers |
-| `src/views/ShapeView.jsx` | Right-aligned numeric headers in Face-and-Path table |
-| `src/index.css` | New rule `.data-table th.num { text-align: right }` |
+| `src/views/StrikeView.jsx` | Dropped redundant table columns, renamed tooltip metric, added consistency caption + table column |
+| `src/data/benchmarks.js` | Removed `idealRadius` field, renamed `pctOfIdeal` to `pctOfCentred` |
 
-## Testing
+## What's next
 
-Production build clean: 49 modules, 176KB gzipped (slightly smaller than before — removed the master heatmap component).
-
-Zone label positioning verified for all club categories (iron, wedge, driver). All labels fit within the SVG viewBox.
-
-## What's still coming in PR 2
-
+PR 2 (already in flight) will land:
 - Time-period filter in FilterBar
-- Shots view with editable rows for relabelling
-- Dedupe key drops `club` (so relabels survive re-imports)
-- Bulk relabel on Sessions view
-- Click-a-session-to-filter from Sessions view
+- Editable Shots view
+- Dedupe key change (drop club)
+- Click-a-session-to-filter
