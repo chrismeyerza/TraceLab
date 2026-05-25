@@ -17,6 +17,7 @@ export default function TopBar({
     ['overview', 'Overview'],
     ['strike', 'Strike'],
     ['flight', 'Flight'],
+    ['distance', 'Distance'],
     ['shape', 'Shape'],
   ];
   return (
