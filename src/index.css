@@ -344,6 +344,7 @@
   }
   .data-table tr:hover td { background: var(--bg-elev-2); color: var(--text); }
   .data-table td.num { text-align: right; color: var(--text); }
+  .data-table th.num { text-align: right; }
 
   /* BUTTONS */
   .btn-primary {

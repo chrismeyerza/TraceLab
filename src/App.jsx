@@ -23,7 +23,7 @@ import SessionsView from './views/SessionsView';
  */
 export default function App() {
   const [shots, setShots] = useState([]);
-  const [view, setView] = useState('overview');
+  const [view, setView] = useState('sessions');
   const [selectedClubs, setSelectedClubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importStatus, setImportStatus] = useState(null);

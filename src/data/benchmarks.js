@@ -73,3 +73,69 @@ export const OPTIMAL_WINDOWS = {
 export function getWindow(club) {
   return OPTIMAL_WINDOWS[normalizeClubName(club)] || OPTIMAL_WINDOWS['7i'];
 }
+
+/**
+ * Strike tolerance bands. Distance from face centre in mm — euclidean (combined
+ * horizontal + vertical). Bands are interpreted as upper bounds:
+ *   distance <= centred -> "Centred" (pure)
+ *   distance <= near    -> "Near centre" (good)
+ *   distance <= off     -> "Off centre" (acceptable)
+ *   distance >  off     -> "Miss" (poor)
+ *
+ * idealRadius is the reference for the "% out of sweet spot" calculation. A
+ * value of 1.0× = exactly at the edge of the centred zone; 2.0× = twice as far
+ * out, and so on. We deliberately use the centred-zone boundary (not the face
+ * size) as the reference because what matters is energy transfer, not whether
+ * you hit the face at all.
+ *
+ * Values reflect typical published club-fitter data plus accepted coaching
+ * benchmarks. Drivers have larger sweet spots due to face size, MOI design,
+ * and trampoline effect; irons and wedges have small, demanding sweet zones.
+ */
+const STRIKE_BANDS = {
+  driver:  { centred: 12, near: 22, off: 35, idealRadius: 12 },
+  wood:    { centred: 10, near: 18, off: 28, idealRadius: 10 },
+  hybrid:  { centred: 9,  near: 16, off: 25, idealRadius: 9 },
+  iron:    { centred: 8,  near: 15, off: 25, idealRadius: 8 },
+  wedge:   { centred: 8,  near: 14, off: 22, idealRadius: 8 },
+};
+
+function clubCategory(club) {
+  const c = normalizeClubName(club);
+  if (c === 'Dr') return 'driver';
+  if (/^[0-9]w$/.test(c)) return 'wood';
+  if (/^[0-9]h$/.test(c)) return 'hybrid';
+  if (/^[0-9]i$/.test(c)) return 'iron';
+  if (['PW', 'GW', 'SW', 'LW'].includes(c)) return 'wedge';
+  // Numeric loft names (e.g. "50°", "56°") — treat as wedges.
+  if (/^\d+°$/.test(club)) return 'wedge';
+  return 'iron'; // safe fallback
+}
+
+/**
+ * Classify a face-impact distance for a given club.
+ * Returns {band, distMm, pctOfIdeal} where:
+ *   band: 'centred' | 'near' | 'off' | 'miss'
+ *   distMm: euclidean distance from centre, mm
+ *   pctOfIdeal: distance relative to the centred-zone radius (1.0 = at edge)
+ */
+export function classifyStrike(club, faceImpactH, faceImpactV) {
+  if (faceImpactH == null || faceImpactV == null) return null;
+  const dist = Math.sqrt(faceImpactH * faceImpactH + faceImpactV * faceImpactV);
+  const bands = STRIKE_BANDS[clubCategory(club)];
+  let band;
+  if (dist <= bands.centred) band = 'centred';
+  else if (dist <= bands.near) band = 'near';
+  else if (dist <= bands.off) band = 'off';
+  else band = 'miss';
+  return {
+    band,
+    distMm: dist,
+    pctOfIdeal: dist / bands.idealRadius,
+  };
+}
+
+/** Look up the raw tolerance bands for a club. Useful for showing the explainer. */
+export function getStrikeBands(club) {
+  return STRIKE_BANDS[clubCategory(club)];
+}

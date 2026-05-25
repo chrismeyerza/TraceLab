@@ -186,7 +186,10 @@ export function parseForesightFile(input, fileName) {
     return row[nk] !== undefined ? row[nk] : null;
   };
 
-  const sessionId = `S-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  // Provisional id used during parsing — replaced after we know the earliest
+  // shot's timestamp, so the final session id is stable, meaningful, and
+  // identical when the same physical session is re-imported.
+  const provisionalSessionId = `S-tmp-${Math.random().toString(36).slice(2, 8)}`;
   const sessionLabel = fileName.replace(/\.(xlsx|xls|csv)$/i, '');
 
   const shots = rows
@@ -223,7 +226,7 @@ export function parseForesightFile(input, fileName) {
       const clubNum = (v) => clubDataMissing ? null : num(v);
 
       const shot = {
-        sessionId,
+        sessionId: provisionalSessionId,
         sessionLabel,
         shotNumber: num(get(r, 'Shot Number')),
         club,
@@ -310,6 +313,31 @@ export function parseForesightFile(input, fileName) {
       return shot;
     })
     .filter((s) => s.ballSpeed != null); // drop entirely empty rows
+
+  // Derive the real session id from the earliest shot's timestamp. This makes
+  // ids meaningful (sortable as date+time), stable across re-imports of the
+  // same physical session, and free of "import-time" noise. Format:
+  //   S-YYYYMMDD-HHMM (e.g. S-20260520-1745).
+  // If no shot has a timestamp we fall back to the provisional id rather than
+  // breaking session storage.
+  let sessionId = provisionalSessionId;
+  const timestamps = shots
+    .map((s) => (s.createdAt ? new Date(s.createdAt).getTime() : null))
+    .filter((t) => t != null);
+  if (timestamps.length) {
+    const earliest = new Date(Math.min(...timestamps));
+    const pad = (n) => String(n).padStart(2, '0');
+    sessionId =
+      'S-' +
+      earliest.getFullYear() +
+      pad(earliest.getMonth() + 1) +
+      pad(earliest.getDate()) +
+      '-' +
+      pad(earliest.getHours()) +
+      pad(earliest.getMinutes());
+    // Patch each shot with the real id
+    for (const s of shots) s.sessionId = sessionId;
+  }
 
   return { sessionId, sessionLabel, shots };
 }

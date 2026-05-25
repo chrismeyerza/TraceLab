@@ -127,11 +127,11 @@ function FaceAndPathTable({ shots }) {
       <thead>
         <tr>
           <th>CLUB</th>
-          <th>N</th>
-          <th>FACE</th>
-          <th>PATH</th>
-          <th>F-TO-P</th>
-          <th>CLOSURE</th>
+          <th className="num">N</th>
+          <th className="num">FACE</th>
+          <th className="num">PATH</th>
+          <th className="num">F-TO-P</th>
+          <th className="num">CLOSURE</th>
         </tr>
       </thead>
       <tbody>
