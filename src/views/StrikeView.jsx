@@ -1,5 +1,5 @@
 import { clubColor, orderedClubs } from '../lib/clubs';
-import { mean, stdev, min, max } from '../lib/stats';
+import { mean, stdev } from '../lib/stats';
 import { convertSpeed, convertDistance, speedLabel, distLabel } from '../lib/units';
 import { classifyStrike, getStrikeBands } from '../data/benchmarks';
 
@@ -7,9 +7,13 @@ import { classifyStrike, getStrikeBands } from '../data/benchmarks';
  * Strike view: where on the face you're contacting the ball, and what it costs.
  *
  * Three sections:
- *   1. Master heatmap — all shots, coloured by ball speed (slow=red → fast=green)
- *   2. Per-club centroid plots with 1σ dispersion ellipse
- *   3. Speed-loss-by-zone table (centre vs slightly-off vs off vs big miss)
+ *   1. Tolerance reference — what counts as centred / near / off, by club category
+ *   2. Strike summary table — % of shots in each band + ball-speed cost
+ *   3. Per-club strike plots — visual centroid + tolerance zones for each club
+ *
+ * The previous "master heatmap" was dropped: the per-club plots cover the same
+ * ground with better information (separated by club), and the FilterBar already
+ * lets you select any combination of clubs for cross-bag pattern-spotting.
  */
 export default function StrikeView({ shots, units }) {
   const strikeShots = shots.filter((s) => s.faceImpactH != null && s.faceImpactV != null);
@@ -39,157 +43,23 @@ export default function StrikeView({ shots, units }) {
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
           <div className="card-title">
-            <span className="num">02</span>Impact location · coloured by ball speed
-          </div>
-          <div className="card-subtitle">Dark = slow · Bright = fast · See what off-centre strikes cost</div>
-        </div>
-        <StrikePlot shots={strikeShots} units={units} />
-      </div>
-
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-header">
-          <div className="card-title">
-            <span className="num">03</span>Per-club strike pattern
-          </div>
-          <div className="card-subtitle">Centroid + 1σ ellipse · rings show centred / near / off-centre tolerance for that club</div>
-        </div>
-        <StrikePerClub shots={strikeShots} units={units} />
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">
-            <span className="num">04</span>Ball speed by strike zone
+            <span className="num">02</span>Strike summary · ball speed by zone
           </div>
           <div className="card-subtitle">How much speed you give up vs your centred strikes · zones use per-club tolerance</div>
         </div>
         <StrikeZoneTable shots={strikeShots} units={units} />
       </div>
-    </>
-  );
-}
 
-/** Master strike plot. SVG, scaled responsively via viewBox. */
-function StrikePlot({ shots, units }) {
-  const W = 800;
-  const H = 460;
-  const FACE_W = 127;
-  const FACE_H = 71.12;
-  const PAD = 60;
-  const PAD_TOP = 30;
-  const plotW = W - PAD * 2;
-  const plotH = H - PAD - PAD_TOP;
-  const xRange = [-40, 40];
-  const yRange = [-30, 30];
-  const xToPx = (x) => PAD + ((x - xRange[0]) / (xRange[1] - xRange[0])) * plotW;
-  const yToPx = (y) => H - PAD - ((y - yRange[0]) / (yRange[1] - yRange[0])) * plotH;
-
-  const speeds = shots.map((s) => s.ballSpeed).filter((v) => v != null);
-  const minBS = min(speeds);
-  const maxBS = max(speeds);
-  const colorFor = (s) => {
-    const t = (s.ballSpeed - minBS) / (maxBS - minBS || 1);
-    if (t < 0.5) {
-      return `rgba(${239 + (251 - 239) * t * 2}, ${68 + (191 - 68) * t * 2}, ${68 + (36 - 68) * t * 2}, 0.85)`;
-    }
-    return `rgba(${251 + (74 - 251) * (t - 0.5) * 2}, ${191 + (222 - 191) * (t - 0.5) * 2}, ${
-      36 + (128 - 36) * (t - 0.5) * 2
-    }, 0.85)`;
-  };
-
-  return (
-    <div className="plot-container">
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-        <line x1={xToPx(xRange[0])} x2={xToPx(xRange[1])} y1={yToPx(0)} y2={yToPx(0)} stroke="var(--border)" strokeDasharray="2 4" />
-        <line x1={xToPx(0)} x2={xToPx(0)} y1={yToPx(yRange[0])} y2={yToPx(yRange[1])} stroke="var(--border)" strokeDasharray="2 4" />
-
-        <rect
-          x={xToPx(-FACE_W / 2)}
-          y={yToPx(FACE_H / 2)}
-          width={xToPx(FACE_W / 2) - xToPx(-FACE_W / 2)}
-          height={yToPx(-FACE_H / 2) - yToPx(FACE_H / 2)}
-          fill="none"
-          stroke="var(--border-strong)"
-          strokeWidth="1.5"
-          rx="6"
-        />
-        <ellipse
-          cx={xToPx(0)}
-          cy={yToPx(0)}
-          rx={xToPx(8) - xToPx(0)}
-          ry={yToPx(0) - yToPx(5)}
-          fill="rgba(74,222,128,0.06)"
-          stroke="rgba(74,222,128,0.25)"
-          strokeDasharray="3 3"
-        />
-
-        {[-60, -40, -20, 0, 20, 40, 60]
-          .filter((x) => x >= xRange[0] && x <= xRange[1])
-          .map((x) => (
-            <text key={x} x={xToPx(x)} y={H - PAD + 18} className="tick-label" textAnchor="middle">
-              {x}
-            </text>
-          ))}
-        {[-30, -20, -10, 0, 10, 20, 30]
-          .filter((y) => y >= yRange[0] && y <= yRange[1])
-          .map((y) => (
-            <text key={y} x={PAD - 10} y={yToPx(y) + 3} className="tick-label" textAnchor="end">
-              {y}
-            </text>
-          ))}
-
-        <text x={W / 2} y={H - 8} className="axis-label" textAnchor="middle">
-          TOE ← HORIZONTAL (mm) → HEEL
-        </text>
-        <text x={14} y={H / 2} className="axis-label" textAnchor="middle" transform={`rotate(-90, 14, ${H / 2})`}>
-          LOW ← VERTICAL (mm) → HIGH
-        </text>
-
-        <text x={xToPx(0)} y={PAD_TOP - 8} className="tick-label" textAnchor="middle">
-          CENTRE
-        </text>
-
-        {shots.map((s, i) => (
-          <circle
-            key={i}
-            cx={xToPx(s.faceImpactH)}
-            cy={yToPx(s.faceImpactV)}
-            r="5"
-            fill={colorFor(s)}
-            stroke="rgba(0,0,0,0.4)"
-            strokeWidth="0.5"
-          >
-            <title>
-              {s.club} · {s.ballSpeed?.toFixed(1)} mph · ({s.faceImpactH}, {s.faceImpactV})
-            </title>
-          </circle>
-        ))}
-      </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, alignItems: 'center' }}>
-        <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--text-dim)' }}>
-          n = <span style={{ color: 'var(--text)', fontWeight: 600 }}>{shots.length}</span> · ball speed range{' '}
-          <span style={{ color: 'var(--text)', fontWeight: 600 }}>
-            {convertSpeed(minBS, units.speed).toFixed(1)}–{convertSpeed(maxBS, units.speed).toFixed(1)}{' '}
-            {speedLabel(units.speed)}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.1em' }}>
-            SLOW
-          </span>
-          <div className="legend-bar">
-            <div className="legend-bar-segment" style={{ background: '#ef4444' }}></div>
-            <div className="legend-bar-segment" style={{ background: '#f97316' }}></div>
-            <div className="legend-bar-segment" style={{ background: '#fbbf24' }}></div>
-            <div className="legend-bar-segment" style={{ background: '#84cc16' }}></div>
-            <div className="legend-bar-segment" style={{ background: '#4ade80' }}></div>
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">
+            <span className="num">03</span>Per-club strike pattern
           </div>
-          <span style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.1em' }}>
-            FAST
-          </span>
+          <div className="card-subtitle">Centroid + 1σ ellipse · green / amber / red zones show centred / near / off-centre tolerance</div>
         </div>
+        <StrikePerClub shots={strikeShots} units={units} />
       </div>
-    </div>
+    </>
   );
 }
 
@@ -269,15 +139,31 @@ function SinglePlot({ shots, club, units }) {
           rx="3"
         />
         {/*
-          Tolerance rings: green (centred), amber (near), red (off boundary).
-          Drawn as ellipses because the SVG's x and y scales differ slightly.
+          Tolerance zones, drawn as concentric ellipses stacked largest-first
+          so the fills layer into annular bands. Outside the red boundary = miss
+          (no fill, emphasised by absence). The fills are deliberately muted so
+          the data dots remain the visual focus.
         */}
-        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.centred)} ry={radPxY(bands.centred)}
-          fill="rgba(74,222,128,0.06)" stroke="rgba(74,222,128,0.5)" strokeWidth="0.8" />
-        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.near)} ry={radPxY(bands.near)}
-          fill="none" stroke="rgba(251,191,36,0.4)" strokeWidth="0.6" strokeDasharray="2 2" />
         <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.off)} ry={radPxY(bands.off)}
-          fill="none" stroke="rgba(239,68,68,0.35)" strokeWidth="0.6" strokeDasharray="1 3" />
+          fill="rgba(239,68,68,0.08)" stroke="rgba(239,68,68,0.35)" strokeWidth="0.6" />
+        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.near)} ry={radPxY(bands.near)}
+          fill="rgba(251,191,36,0.10)" stroke="rgba(251,191,36,0.45)" strokeWidth="0.6" />
+        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.centred)} ry={radPxY(bands.centred)}
+          fill="rgba(74,222,128,0.14)" stroke="rgba(74,222,128,0.55)" strokeWidth="0.8" />
+
+        {/* Zone labels — positioned at the top edge of each band */}
+        <text x={xToPx(0)} y={yToPx(bands.centred) - 2} textAnchor="middle"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(74,222,128,0.9)', letterSpacing: '0.05em' }}>
+          CENTRED
+        </text>
+        <text x={xToPx(0)} y={yToPx(bands.near) - 2} textAnchor="middle"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(251,191,36,0.9)', letterSpacing: '0.05em' }}>
+          NEAR
+        </text>
+        <text x={xToPx(0)} y={yToPx(bands.off) - 2} textAnchor="middle"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(239,68,68,0.9)', letterSpacing: '0.05em' }}>
+          OFF
+        </text>
         {shots.length >= 3 && (
           <ellipse
             cx={xToPx(meanH)}
@@ -374,13 +260,13 @@ function StrikeZoneTable({ shots, units }) {
       <thead>
         <tr>
           <th>ZONE</th>
-          <th>SHOTS</th>
-          <th>% OF TOTAL</th>
-          <th>AVG DIST FROM CENTRE</th>
-          <th>AVG BALL SPEED</th>
-          <th>VS YOUR CENTRED</th>
-          <th>AVG SMASH</th>
-          <th>AVG CARRY</th>
+          <th className="num">SHOTS</th>
+          <th className="num">% OF TOTAL</th>
+          <th className="num">AVG DIST FROM CENTRE</th>
+          <th className="num">AVG BALL SPEED</th>
+          <th className="num">VS YOUR CENTRED</th>
+          <th className="num">AVG SMASH</th>
+          <th className="num">AVG CARRY</th>
         </tr>
       </thead>
       <tbody>
@@ -442,11 +328,11 @@ function ToleranceReference() {
         <thead>
           <tr>
             <th>CLUB CATEGORY</th>
-            <th>CENTRED ≤</th>
-            <th>NEAR ≤</th>
-            <th>OFF ≤</th>
-            <th>MISS &gt;</th>
-            <th>IDEAL RADIUS</th>
+            <th className="num">CENTRED ≤</th>
+            <th className="num">NEAR ≤</th>
+            <th className="num">OFF ≤</th>
+            <th className="num">MISS &gt;</th>
+            <th className="num">IDEAL RADIUS</th>
           </tr>
         </thead>
         <tbody>
