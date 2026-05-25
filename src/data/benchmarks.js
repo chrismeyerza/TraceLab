@@ -82,22 +82,22 @@ export function getWindow(club) {
  *   distance <= off     -> "Off centre" (acceptable)
  *   distance >  off     -> "Miss" (poor)
  *
- * idealRadius is the reference for the "% out of sweet spot" calculation. A
- * value of 1.0× = exactly at the edge of the centred zone; 2.0× = twice as far
- * out, and so on. We deliberately use the centred-zone boundary (not the face
- * size) as the reference because what matters is energy transfer, not whether
- * you hit the face at all.
+ * `pctOfCentred` in classifyStrike() expresses distance as a multiple of the
+ * centred-zone radius — so 1.0× = exactly at the edge of the centred zone;
+ * 2.0× = twice as far out. We deliberately use the centred-zone boundary (not
+ * the face size) as the reference because what matters is energy transfer, not
+ * whether you hit the face at all.
  *
  * Values reflect typical published club-fitter data plus accepted coaching
  * benchmarks. Drivers have larger sweet spots due to face size, MOI design,
  * and trampoline effect; irons and wedges have small, demanding sweet zones.
  */
 const STRIKE_BANDS = {
-  driver:  { centred: 12, near: 22, off: 35, idealRadius: 12 },
-  wood:    { centred: 10, near: 18, off: 28, idealRadius: 10 },
-  hybrid:  { centred: 9,  near: 16, off: 25, idealRadius: 9 },
-  iron:    { centred: 8,  near: 15, off: 25, idealRadius: 8 },
-  wedge:   { centred: 8,  near: 14, off: 22, idealRadius: 8 },
+  driver:  { centred: 12, near: 22, off: 35 },
+  wood:    { centred: 10, near: 18, off: 28 },
+  hybrid:  { centred: 9,  near: 16, off: 25 },
+  iron:    { centred: 8,  near: 15, off: 25 },
+  wedge:   { centred: 8,  near: 14, off: 22 },
 };
 
 function clubCategory(club) {
@@ -114,10 +114,10 @@ function clubCategory(club) {
 
 /**
  * Classify a face-impact distance for a given club.
- * Returns {band, distMm, pctOfIdeal} where:
+ * Returns {band, distMm, pctOfCentred} where:
  *   band: 'centred' | 'near' | 'off' | 'miss'
  *   distMm: euclidean distance from centre, mm
- *   pctOfIdeal: distance relative to the centred-zone radius (1.0 = at edge)
+ *   pctOfCentred: distance relative to the centred-zone radius (1.0 = at edge)
  */
 export function classifyStrike(club, faceImpactH, faceImpactV) {
   if (faceImpactH == null || faceImpactV == null) return null;
@@ -131,7 +131,7 @@ export function classifyStrike(club, faceImpactH, faceImpactV) {
   return {
     band,
     distMm: dist,
-    pctOfIdeal: dist / bands.idealRadius,
+    pctOfCentred: dist / bands.centred,
   };
 }
 

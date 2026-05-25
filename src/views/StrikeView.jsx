@@ -193,7 +193,7 @@ function SinglePlot({ shots, club, units }) {
             >
               <title>
                 {s.ballSpeed != null ? convertSpeed(s.ballSpeed, units.speed).toFixed(1) : '—'} {speedLabel(units.speed)} · ({s.faceImpactH}, {s.faceImpactV})
-                {c ? ` · ${c.distMm.toFixed(1)}mm from centre · ${(c.pctOfIdeal * 100).toFixed(0)}% of ideal` : ''}
+                {c ? ` · ${c.distMm.toFixed(1)}mm from centre · ${(c.pctOfCentred * 100).toFixed(0)}% of centred zone` : ''}
               </title>
             </circle>
           );
@@ -206,6 +206,11 @@ function SinglePlot({ shots, club, units }) {
         <span style={{ color: 'var(--amber)' }}>● {bandCount('near')} near</span>
         <span style={{ color: 'var(--red)' }}>● {bandCount('off') + bandCount('miss')} off+</span>
       </div>
+      {shots.length >= 3 && (
+        <div style={{ textAlign: 'center', marginTop: 4, fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--text-faint)', letterSpacing: '0.05em' }}>
+          DASHED OUTLINE = CONSISTENCY ZONE · ~68% OF SHOTS · σ {Math.hypot(sdH, sdV).toFixed(1)}mm
+        </div>
+      )}
     </>
   );
 }
@@ -263,6 +268,7 @@ function StrikeZoneTable({ shots, units }) {
           <th className="num">SHOTS</th>
           <th className="num">% OF TOTAL</th>
           <th className="num">AVG DIST FROM CENTRE</th>
+          <th className="num">CONSISTENCY (σ)</th>
           <th className="num">AVG BALL SPEED</th>
           <th className="num">VS YOUR CENTRED</th>
           <th className="num">AVG SMASH</th>
@@ -274,6 +280,13 @@ function StrikeZoneTable({ shots, units }) {
           const zShots = byBand[b];
           if (!zShots.length) return null;
           const dists = zShots.map((s) => classifyStrike(s.club, s.faceImpactH, s.faceImpactV).distMm);
+          // Consistency: combined σ of impact location within this band. Tight =
+          // shots cluster in roughly the same spot; loose = spraying within the
+          // band. Useful even for "off" — tight off shots reveal a systematic
+          // miss pattern, loose off shots reveal random inconsistency.
+          const sigmaH = stdev(zShots.map((s) => s.faceImpactH));
+          const sigmaV = stdev(zShots.map((s) => s.faceImpactV));
+          const sigma = Math.hypot(sigmaH, sigmaV);
           const bs = mean(zShots.map((s) => s.ballSpeed));
           const sm = mean(zShots.map((s) => s.efficiency).filter((v) => v != null));
           const ca = mean(zShots.map((s) => s.carry).filter((v) => v != null));
@@ -291,6 +304,7 @@ function StrikeZoneTable({ shots, units }) {
               <td className="num">{zShots.length}</td>
               <td className="num">{((zShots.length / shots.length) * 100).toFixed(0)}%</td>
               <td className="num">{mean(dists).toFixed(1)} mm</td>
+              <td className="num">{zShots.length >= 3 ? `± ${sigma.toFixed(1)} mm` : '—'}</td>
               <td className="num">{convertSpeed(bs, units.speed).toFixed(1)} {speedLabel(units.speed)}</td>
               <td
                 className="num"
@@ -331,8 +345,6 @@ function ToleranceReference() {
             <th className="num">CENTRED ≤</th>
             <th className="num">NEAR ≤</th>
             <th className="num">OFF ≤</th>
-            <th className="num">MISS &gt;</th>
-            <th className="num">IDEAL RADIUS</th>
           </tr>
         </thead>
         <tbody>
@@ -344,8 +356,6 @@ function ToleranceReference() {
                 <td className="num" style={{ color: 'var(--green)' }}>{b.centred} mm</td>
                 <td className="num" style={{ color: 'var(--amber)' }}>{b.near} mm</td>
                 <td className="num" style={{ color: 'var(--red)' }}>{b.off} mm</td>
-                <td className="num" style={{ color: 'var(--text-dim)' }}>{b.off} mm</td>
-                <td className="num">{b.idealRadius} mm</td>
               </tr>
             );
           })}
@@ -356,7 +366,7 @@ function ToleranceReference() {
         <span style={{ color: 'var(--green)' }}>Centred</span> is the pure-energy-transfer zone where ball-speed loss is essentially zero.{' '}
         <span style={{ color: 'var(--amber)' }}>Near</span> shots typically cost 1-3% ball speed.{' '}
         <span style={{ color: 'var(--red)' }}>Off</span> shots cost 3-8% — that's 5-15 yards on a 7-iron.{' '}
-        Misses beyond that cost more, plus contribute heavily to dispersion.
+        Beyond that is a miss; expect bigger losses and worse dispersion.
       </div>
     </>
   );
