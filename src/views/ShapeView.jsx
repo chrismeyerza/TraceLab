@@ -1,6 +1,6 @@
 import { clubColor, orderedClubs } from '../lib/clubs';
 import { mean } from '../lib/stats';
-import { classifyShape, bucketShape, SHAPE_BUCKETS } from '../lib/shape';
+import { classifyShape, bucketShape, SHAPE_BUCKETS, formatPath } from '../lib/shape';
 
 /**
  * Shape & delivery view: face direction, club path, and the gap between them.
@@ -145,7 +145,7 @@ function FaceAndPathTable({ shots }) {
               <td style={{ color: clubColor(club), fontWeight: 700 }}>{club}</td>
               <td className="num">{clubShots.length}</td>
               <td className="num">{f >= 0 ? '+' : ''}{f.toFixed(1)}°</td>
-              <td className="num">{p >= 0 ? '+' : ''}{p.toFixed(1)}°</td>
+              <td className="num">{formatPath(p)}</td>
               <td
                 className="num"
                 style={{ color: ftp > 1 ? 'var(--amber)' : ftp < -1 ? 'var(--blue)' : 'var(--green)' }}
@@ -236,7 +236,7 @@ function FacePathScatter({ shots }) {
             strokeWidth="0.5"
           >
             <title>
-              {s.club} · Face {s.faceToTarget.toFixed(1)}° · Path {s.clubPath.toFixed(1)}° · F-to-P{' '}
+              {s.club} · Face {s.faceToTarget.toFixed(1)}° · Path {formatPath(s.clubPath)} · F-to-P{' '}
               {s.shape.faceToPath.toFixed(1)}° · {s.shape.name}
             </title>
           </circle>

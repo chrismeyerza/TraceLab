@@ -1,94 +1,111 @@
-# Changes — Filter visibility + Shots view tabs (PR 3)
+# Changes — Path labelling + pillared Insights (PR 4.5)
 
-Five interlocking pieces to fix the "what's currently filtered?" problem and
-to make the Shots view actually usable now that we have 24+ columns of data.
+Two changes bundled because both touch Overview/Shape areas.
 
-## 1. New ScopeSummary line on every analytical view
+## 1. Path values now show I-O / O-I direction tags
 
-Below the FilterBar, every view now shows a single-line summary of the
-current data scope when (and only when) filters are active:
+Foresight FSX Play labels Club Path with a directional tag: I-O (in-to-out)
+or O-I (out-to-in). The numeric value alone is opaque without that tag —
+"+2.1°" is meaningless to a casual reader, "+2.1° I-O" tells you it's an
+inside-out swing.
 
-> Showing **47** of 213 shots · 22% · `7i` · `LAST 30 DAYS` · `SESSION: 20260520-1745`
+Applied in three places:
+- Shape view · Face & Path table (the one you flagged)
+- Shape view · Face-vs-Path scatter tooltip
+- Shots view · Club tab · PATH column
 
-Colour-coded chips: green = club filter, amber = time filter, blue = session
-pin. The line is hidden entirely when nothing is filtered, so we don't clutter
-the screen with redundant information.
+A shared `formatPath()` helper now lives in `lib/shape.js` so all three call
+the same code. Rules:
+- `> +0.5°` → `+N.N° I-O` (inside-out, draw-promoting)
+- `< -0.5°` → `−N.N° O-I` (out-to-in, fade-promoting)
+- Within ±0.5° → `+N.N° SQ` (effectively square)
 
-## 2. Clear filters button
+## 2. Insights restructured into five analytical pillars
 
-The FilterBar gets a "Clear all filters" button in its top-right corner,
-which appears whenever any filter is active. One click resets clubs to ALL,
-time to all-time, and removes any session pin.
+The old Insights card was overwhelmingly strike-focused — four of five rule
+families targeted strike location, which meant a single problematic club
+could generate three or four redundant "your strike is off" insights and
+crowd out genuinely different concerns from other parts of the game.
 
-## 3. Click-the-last-active-chip resets to ALL
+New structure: insights now live under five pillars, each rendered as its
+own labelled section within the Insights card.
 
-Previously, clicking the only remaining active club chip did nothing — the
-guard was "don't let the filter set become empty". That created a stuck state
-where the user thought the click was broken.
+| Pillar | What it covers | Rules |
+|---|---|---|
+| **Strike** | Where you hit the face | Strike quality summary (off-centre %, directional bias, speed cost) |
+| **Flight** | Launch, spin, descent | Launch high/low, Spin high/low, Descent shallow (irons/wedges only) |
+| **Distance** | Carry & gapping | Strike-quality cost per club, adjacent-club gap problems |
+| **Shape** | Path, face, curve | Dominant shape, per-club path bias, per-club face-to-path |
+| **Consistency** | Repeatability | Carry dispersion (CV), club-path variability |
 
-Now clicking the last active chip re-selects ALL clubs. There's no stuck
-state, and the natural mental model ("toggle this chip off") works.
+Each pillar capped at 3 insights so no pillar dominates. Within a pillar,
+ordering is `bad` → `warn` → info-level so the worst issues surface first.
 
-## 4. Louder active filter chips
+Visual: each pillar gets a section header in its accent colour (red for
+Strike, amber for Flight, green for Distance, blue for Shape, purple for
+Consistency) with a thin underline. Easy to skim, easy to scan to the
+pillar you care about.
 
-Inactive chips are now visibly dimmer (50% opacity, transparent background,
-faint text). Active chips get a glow halo via box-shadow plus the existing
-colour swap. The contrast between "this is selected" and "this is not"
-is now hard to miss at a glance.
+## Other improvements baked in
 
-## 5. Shots view: Summary / Ball / Club sub-tabs
+**Consolidated strike rule.** The old four rules (strike cost, horizontal
+bias, vertical bias, smash factor) all fired on the same underlying problem.
+Consolidated into a single per-club "strike quality" rule that combines
+off-centre %, directional bias, and carry cost into one richer insight.
+Result: each club generates one strike insight at most, not four.
 
-The Shots view crammed 13 data columns into one table and forced horizontal
-scrolling. With derived fields landed (Face to Path, Spin Axis, Run, Curve,
-Spin Loft) we'd need 18+ columns to surface everything — clearly untenable.
+**Honest about insufficient data.** Every rule requires `MIN_SHOTS_PER_CLUB`
+(5) shots minimum before firing. Avoids the "we made up an insight from
+3 shots of noise" failure mode.
 
-Now three sub-tabs sit at the top of the Shots view:
+**Per-rule guardrails.** Some rules need extra context — e.g. Descent
+Shallow only fires for irons/wedges (drivers and woods are *meant* to descend
+shallow). Spin-loft considerations baked into the flight pillar.
 
-- **Summary** (6 cols) — when, club, ball spd, smash, carry, total, F→P.
-  The scan view. Fast.
-- **Ball** (16 cols) — everything ball-flight: speeds, all the spins,
-  spin axis, carry, total, run, offline, curvature, peak height, descent
-  angle. **Smash factor lives here** (it's an outcome of strike quality).
-- **Club** (12 cols) — everything club-impact: club speed (gross + at impact),
-  AoA, path, face-to-target, face-to-path, loft, spin loft, lie, closure
-  rate, impact location H+V.
+## What you'll see on YOUR data right now
 
-Shared across all three tabs:
-- Selection state (checkboxes survive tab switching)
-- Bulk action bar (relabel, delete)
-- Editable club chip (every row, every tab)
-- Sort: persists between tabs if the sort column exists in the new tab;
-  falls back to "When" descending otherwise
+Running PR 4.5 against your current 22-shot dataset, expect insights like:
+
+**Strike pillar:**
+- `7i · Strike quality` — % off-centre + speed cost + 8.3 yd carry loss
+
+**Flight pillar:**
+- `50° · Launch high` (24° vs 16-20° optimal — ballooning)
+- `7i · Spin low` (4,500 rpm vs 6,500-7,500 — shallow/de-lofted delivery)
+- `7i · Descent shallow` (32.5° vs 42-48° — won't hold green)
+- `50° · Descent shallow` (36.5° vs 42-48°)
+
+**Distance pillar:**
+- `7i · Strike-quality cost` (+8.3 yds available if you cleaned up strikes)
+
+**Shape pillar:**
+- `7i · Face-to-Path` (−3.8° — strong closed-to-path delivery = draw bias)
+
+**Consistency pillar:**
+- `7i · Carry inconsistency` (CV 10%)
+- `50° · Carry inconsistency` (CV 11%)
+
+That's 8-10 distinct insights across the full game, vs the ~3-4 strike-
+heavy ones you were getting before. Much more useful for figuring out where
+to spend your practice time.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/components/ScopeSummary.jsx` | **NEW** — the scope summary line component |
-| `src/components/FilterBar.jsx` | Clear-all button; last-chip-resets-to-ALL; louder active styling on club chips |
-| `src/views/ShotsView.jsx` | Restructured around a TABS config; columns split into Summary/Ball/Club; sort-key persistence; minWidth based on tab |
-| `src/App.jsx` | Imports & renders ScopeSummary beneath FilterBar |
-| `src/index.css` | `.scope-summary`, `.shots-tabs`, dimmed inactive chips, glow box-shadow on active chips |
+| `src/lib/shape.js` | New `formatPath()` helper |
+| `src/views/ShapeView.jsx` | Use `formatPath` in Face & Path table + tooltip |
+| `src/views/ShotsView.jsx` | Use `formatPath` in PATH column |
+| `src/views/OverviewView.jsx` | Insights function fully rewritten with pillar structure + new rule families |
 
-## What this does NOT change
+## What's NOT changed
 
-- Filter semantics are unchanged. Persistent across views; AND between club,
-  time, and session pin. This was the right design — the bug was visibility,
-  not behaviour.
-- Storage layer unchanged.
-- Parser unchanged.
-- Other views unchanged.
-
-## Testing
-
-- Build clean: 49 modules, 181 KB gzipped (+1.5 KB for the new component +
-  the larger ShotsView)
-- Tab switching preserves selection and sort across the three tabs
-- Sort-key fallback verified: sort by `clubSpeed` on Club tab → switch to
-  Summary tab → falls back to `createdAt desc` because `clubSpeed` doesn't
-  exist there
+- Storage / parser / FilterBar / Distance view / Strike view unchanged
+- Per-club averages table in Overview unchanged
 
 ## What's next
 
-PR 4 (Distance view) and PR 5 (Swing analysis upgrade to Shape view) — the
-remaining backlog from our last round.
+Originally planned PR 5 was the Shape view upgrade (per-club swing
+fingerprint). With the pillared Insights now covering shape decently at
+Overview level, the Shape view rework is less urgent — happy to defer or
+proceed, your call.

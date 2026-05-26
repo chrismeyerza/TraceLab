@@ -65,3 +65,27 @@ export function bucketShape(name) {
   };
   return simplify[name] || name;
 }
+
+/**
+ * Format a Club Path value for display, adding the I-O / O-I direction tag
+ * Foresight uses in FSX Play. Convention matches the source data:
+ *   - Negative path => OUT-IN (the over-the-top, fade-promoting move)
+ *   - Positive path => IN-OUT (the inside-out, draw-promoting move)
+ *   - Within ±0.5° => SQUARE (effectively on-plane, no meaningful directional tag)
+ *
+ * This is left/right invariant: I-O always means inside-out relative to the
+ * target line regardless of handedness. The sign convention in storage is
+ * already "out-in negative / in-out positive" per the Foresight export, so
+ * we don't flip for left-handers.
+ *
+ * Returns a string like "+2.1° I-O" or "−1.8° O-I" or "+0.3° SQ".
+ */
+export function formatPath(clubPath, digits = 1) {
+  if (clubPath == null) return '—';
+  const sign = clubPath > 0 ? '+' : '';
+  let tag;
+  if (Math.abs(clubPath) <= 0.5) tag = 'SQ';
+  else if (clubPath > 0) tag = 'I-O';
+  else tag = 'O-I';
+  return `${sign}${clubPath.toFixed(digits)}° ${tag}`;
+}

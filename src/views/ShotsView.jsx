@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { clubColor, orderedClubs, normalizeClubName } from '../lib/clubs';
 import { convertSpeed, convertDistance, speedLabel, distLabel } from '../lib/units';
+import { formatPath } from '../lib/shape';
 
 /**
  * Shots view: raw editable table of every shot in the current filter scope.
@@ -123,7 +124,7 @@ const makeColumns = (units) => ({
   },
   clubPath: {
     key: 'clubPath', label: 'PATH', num: true,
-    render: (s) => s.clubPath == null ? '—' : `${s.clubPath > 0 ? '+' : ''}${s.clubPath.toFixed(1)}°`,
+    render: (s) => formatPath(s.clubPath),
   },
   faceToTarget: {
     key: 'faceToTarget', label: 'FACE→TGT', num: true,

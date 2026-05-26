@@ -14,6 +14,7 @@ import ConfirmDialog from './components/ConfirmDialog';
 import OverviewView from './views/OverviewView';
 import StrikeView from './views/StrikeView';
 import FlightView from './views/FlightView';
+import DistanceView from './views/DistanceView';
 import ShapeView from './views/ShapeView';
 import ShotsView from './views/ShotsView';
 import SessionsView from './views/SessionsView';
@@ -251,6 +252,7 @@ export default function App() {
             )}
             {view === 'strike' && <StrikeView shots={filteredShots} units={units} />}
             {view === 'flight' && <FlightView shots={filteredShots} units={units} />}
+            {view === 'distance' && <DistanceView shots={filteredShots} units={units} />}
             {view === 'shape' && <ShapeView shots={filteredShots} rightHanded={rightHanded} />}
             {view === 'shots' && (
               <ShotsView
