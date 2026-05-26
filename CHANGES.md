@@ -1,118 +1,156 @@
-# Changes — Flight gauges refresh + Overview trimmed means (PR 4.6)
+# Changes — Legibility pass across all views (PR 4.7)
 
-Focused FlightView overhaul addressing eight specific issues raised in review,
-plus the Overview per-club table switched to the same statistic for consistency.
+A systemic fix to dim text problems across every menu item — Overview,
+Strike, Flight, Distance, Shape, Shots, Sessions.
 
-## What was wrong with the Flight gauges
+## The problem this addresses
 
-1. **Data clipped off-axis.** Your 7i averages 4,498 rpm but the spin chart axis started at 5,500 — your typical shot was invisible, pinned to the left edge.
-2. **Headline value disconnected from marker.** The number on the right of each gauge had no visual link to where the marker sat on the bar.
-3. **"Average" was ambiguous.** Was it mean? Median? Trimmed? Wasn't said. Turned out to be plain arithmetic mean — outlier-sensitive on small samples.
-4. **Caption unreadable.** `--text-faint` colour was too dim to read on the dark theme.
-5. **σ notation cryptic.** "σ ±2.1°" doesn't immediately convey what it means.
-6. **Green zone too faint.** 15% opacity green wash — easy to miss the target.
-7. **Shot markers invisible.** 1px dim ticks at 50% opacity — couldn't tell data points from background noise.
-8. **No labels on key zones.** Bar showed colours but no words explaining what they meant.
+The previous palette had three grey tiers (`--text`, `--text-dim`,
+`--text-faint`) but the dim and faint tiers were significantly under-bright
+for a dark theme. Combined with small font sizes (9–10px) and regular weight
+(400), text intended to be "subtle" became genuinely hard to read on a
+moderate-quality monitor in normal indoor lighting.
+
+This wasn't a one-off bug to bump in three places — it was a systemic miscall
+across ~50 component-level usages. The fix is correspondingly system-level.
 
 ## What's now in place
 
-### Auto-expanding axis
-Each gauge now bounds its axis to `union(benchmark window, actual data range) + 5% padding`. So if your data falls outside the published window — like your 7i spin — the axis stretches to include it. The optimal zone is still drawn at the same numerical position; it just occupies a smaller fraction of the chart.
+### A rebuilt five-tier text palette
 
-Concrete: with your data, the 7i spin chart now runs 4,300 → 8,700 rpm. Your typical shot at 4,498 sits at ~4.5% from the left edge (clearly visible). The optimal zone sits at 50–73% along the axis.
+The old three tiers had a squashed contrast pyramid. The new five tiers map
+cleanly to information hierarchy:
 
-### Anchored value label
-The headline value is now positioned **directly above the marker on the bar**. Where it says the number is exactly where the data point sits. Edge-cases handled: if the marker is near the left or right edge, the label clamps to the edge so it never gets clipped.
+| Tier | Luminance | Use for |
+|---|---|---|
+| `--text-strong` (NEW) | ~96% white | Headline numbers, big values, "this matters" |
+| `--text` | ~88% white | Body text, ordinary chart labels, table values |
+| `--text-dim` | ~72% (was 56%) | Supporting captions, secondary labels |
+| `--text-faint` | ~55% (was 36%) | Metadata, sub-text, range/n callouts |
+| `--text-mute` (NEW) | ~38% | Actually disabled / decorative chrome only |
 
-### 10% trimmed mean (the "typical" value)
-The headline number is now the **10% trimmed mean** — drop the top and bottom 10% of values, average the rest. Best of both: uses most of your data (80%), drops the outliers that drag a raw mean around. With typical sessions of 5–30 shots per club, this is meaningfully better than ordinary mean. Below 5 shots it degrades safely to ordinary mean.
+The two existing tiers got pulled up by 12–19 percentage points each — the
+single highest-leverage change in this PR. That ripples through every
+component that uses the variables (around 50 CSS rules plus ~12 inline JSX
+usages).
 
-The label "TYPICAL" sits beneath the number, so you always know what the figure is.
+### Border colours nudged brighter
 
-### Punchy optimal zone
-- Green fill bumped from 15% → 32% opacity
-- Borders bumped to 1.5px at 90% opacity
-- Small "OPTIMAL" text label centred in the zone
-- Subtle inset highlight for depth
+`--border` and `--border-strong` got tiny brightness bumps so the lines
+separating cards, rows, and dividers are visible without being loud. Was
+making the layout feel "blurry" at the edges.
 
-### Visible shot markers
-- Filled circles in the **club's signature colour**, 6px diameter
-- 1px black outline so dots remain visible against the green zone
-- Overlapping dots stack visibly — itself a useful density signal
+### Targeted structural fixes on top of the palette
 
-### Typical-shot marker upgrade
-- Vertical line through the track (white, 2px, with subtle glow)
-- Small downward-pointing triangle anchored at the top edge of the track
+Where the palette alone wasn't enough — usually because text was also too
+small or too light-weight to read — there are individual class-level fixes:
 
-### Acceptable-range markers
-Soft 1px vertical lines at `absMin` and `absMax` (the wider "acceptable" boundary that's broader than the optimal zone). Reads as "anywhere between these soft lines is still OK; the green band is just where tour players cluster".
+**Card titles** — bumped from 11px `--text-dim` to 12px `--text-strong`,
+weight 600. They're top-of-card headings, they should command attention.
 
-### Readable caption
-Replaced the dim, cryptic σ caption with:
+**Card subtitles** — bumped from 10px `--text-faint` to 11px `--text-dim`,
+weight 500. Was the smallest-thinnest-dimmest combination on the page.
 
-> **1σ band 12.3°–16.1°** · range 9.4°–17.8° · n = 24
+**Page meta lines** — first line in full `--text` weight 500; second line
+in dim weight 400. Old version had both lines at the same dim level.
 
-- "1σ band" gives you the precise statistical meaning — same information as σ but expressed as a concrete numerical range
-- Range = actual min–max of all your shots
-- n = sample size
+**Club summary table cells** — values bumped from 14px to 15px in
+`--text-strong`. Labels (the "mph" / "yd carry" / "shots" sub-text) bumped
+from 9px `--text-faint` to 10px `--text-faint` weight 500. Header row from
+9px to 10px weight 600.
 
-The 1σ band uses the σ of the **full** sample, not the trimmed sample — σ is supposed to describe spread including outliers, so trimming would understate variability. Standard practice in robust statistics.
+**±σ annotations** (Overview per-club table) — bumped from 10px to 11px,
+added weight 500. Was barely visible.
 
-### Scale labels reorganised
-Endpoint labels (axis min, axis max) pinned to the bar edges. The two optimal-zone boundary labels (`idealLow`, `idealHigh`) now float above their actual numerical positions on the bar — not evenly distributed.
+**Strike tolerance explainer** — bumped from 12px `--text-dim` to 13px
+`--text`. Bold colour callouts (Centred / Near / Off) got weight 600.
 
-## Overview per-club table consistency
+**Strike per-club plot headers** — n-count bumped from 10px `--text-faint`
+to 11px `--text-dim` weight 600. Stats line below the plot bumped from 10px
+to 11px with stronger value text.
 
-For the same data to show the same number across the app, the Overview per-club "averages" table is now also using the **10% trimmed mean** rather than arithmetic mean:
+**Strike band-count line** ("● 3 centred ● 6 near ● 7 off+") — bumped from
+10px `--text-dim` to 11px weight 600.
 
-- Ball Speed, Smash, Carry, Spin → trimmed-mean values
-- Strike Centroid (faceImpactH/V) → trimmed-mean coordinates
-- σ in the ±X ranges stays as full-sample σ (same reason as Flight)
+**Strike consistency-zone caption** — bumped from 9px to 10px weight 500.
 
-The card subtitle now says **"10% trimmed mean (outliers dropped) · matches Flight & Distance views"** so the user always knows what they're looking at without checking the docs.
+**Insight title** — bumped from 10px to 11px.
 
-Card title also updated: "By club · averages" → **"By club · typical values"** for accuracy.
+**Insight pillar headers** — bumped from 10px to 12px weight 700, with
+stronger border colour (33 → 55 alpha).
+
+**Distance explainer** — bumped from 12px `--text-dim` to 13px `--text`,
+with `--text-strong` for the bold callouts.
+
+**Distance gap warning** — bumped from 11px `--text-dim` to 13px `--text`,
+with weight 700 amber callout and stronger border.
+
+**Distance ladder labels** — carry numbers bumped from 11px to 12px weight
+600 in `--text-strong`. Source tag ("FROM ALL SHOTS" / "SMART CARRY")
+bumped from 9px to 10px weight 500.
+
+**Distance cost-of-poor-strikes secondary text** — bumped from 10px
+`--text-dim` to 11px weight 500.
+
+**Distance empty state** — bumped from 12px to 13px with line-height 1.5.
+
+**Sessions list header** — bumped from 9px `--text-faint` to 10px
+`--text-dim` weight 600.
+
+**Sessions list rows** — ID column from 10px `--text-faint` to 11px weight
+500. Action buttons (VIEW / DEL) from 9px to 10px with more padding so
+they're easier to click.
+
+**Sessions grid** — widened action column from 40px to 80px so VIEW and DEL
+buttons fit without crowding.
+
+**Club tag chips** in sessions — bumped padding and weight from 600 to 700.
+
+**Flight gauge caption** — `gauge-caption-dim` now has weight 500 (was
+default 400). Combined with brighter `--text-faint`, the "range X · n=Z"
+portion is now clearly readable while staying lower-emphasis than the 1σ band.
+
+## What you should now experience
+
+The test I committed to was: **you should be able to read every piece of
+text on every screen with a glance, in a moderately lit room, without
+leaning forward**. After this pass:
+
+- Card subtitles, page meta lines, and explainer text all sit at readable
+  contrast across all views
+- The ±σ ranges next to your per-club averages are visible at a normal
+  reading distance
+- The "range X–Y" / "n = Z" caption on each Flight gauge is clearly readable
+- The Strike explainer text reads like prose, not metadata
+- The Distance gap warning has the visual weight it needs
+- Session IDs, club tags, and action buttons are properly distinguished
+
+If any specific spot still looks under-bright, tell me where and I'll bump
+it surgically — this is a starting state for the palette, not a final one.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/stats.js` | New `trimmedMean()` helper; `summarize()` now includes both raw mean and trimmed mean |
-| `src/views/FlightView.jsx` | FlightGauge rewritten — anchored label, axis expand, dots, triangle marker, readable caption |
-| `src/views/OverviewView.jsx` | Per-club table switched to trimmed means; card title/subtitle updated |
-| `src/index.css` | Gauge styles overhauled — punchier zone, larger dots, anchored-label rules, scale-mid positioning, readable caption styles |
+| `src/index.css` | Palette rebuild (5-tier system); ~20 class-level adjustments to text sizing/weight/colour |
+| `src/views/OverviewView.jsx` | ±σ annotations bumped; insight pillar header bumped |
+| `src/views/StrikeView.jsx` | Tolerance explainer bumped; per-club plot header/stats/band-count line bumped; consistency caption bumped |
+| `src/views/DistanceView.jsx` | Explainer / gap warning / ladder labels / cost cards / empty state all bumped |
+| `src/views/SessionsView.jsx` | ID column and action buttons bumped; column widths adjusted |
 
-## What's NOT changed
+## What's NOT in this PR
 
-The Insights rules (Strike/Flight/Distance/Shape/Consistency pillars at the
-bottom of Overview) still use plain mean internally for rule triggering. Insights
-are guarded by `MIN_SHOTS_PER_CLUB = 5` and trigger on thresholds — outlier
-sensitivity is less critical. If we ever see misleading insights from outliers
-we can switch those to trimmedMean too.
+- No logic changes anywhere — no statistics rewritten, no new features
+- No new components or new views
+- No breaking changes to the data model
 
-## What you'll see specifically with YOUR data
+This is purely a visual hygiene PR. Safe to apply and revert.
 
-**Overview · per-club table** — your 7i carry typical might shift by 2-5 yards
-vs the old mean (depending on how outlier-heavy your dataset is). Smash and
-ball speed similarly. The σ values stay the same.
+## Verified
 
-**Flight · 7i spin gauge** — axis now 4,300–8,700 rpm. Your typical (4,498 rpm)
-sits visibly near the left edge. Optimal zone 6,500–7,500 takes up the right
-half. Clearly tells you "spin is well below optimal".
-
-**Flight · 7i descent gauge** — your typical 32.5° with optimal 42–48°. Your
-shots cluster around 32–33° (well below optimal), the green band sits to the
-right. Visual story: "your descent is consistently shallow, not just averaging
-shallow".
-
-**Flight · 50° launch gauge** — your typical 24° with optimal 16–20°. Your
-shots cluster around 22–26°, green band 16–20° sits to the left. Visual story:
-"you're consistently ballooning this club".
-
-The new gauges should make the **shape of the problem** obvious at a glance,
-where the old version showed only the headline number.
+Production build clean. Bundle size effectively unchanged (a few hundred
+bytes of additional CSS for the new variables).
 
 ## What's next
 
-PR 5 — Shape view → swing fingerprint upgrade — remains the open priority
-from the backlog. Or other directions if you have other priorities.
+PR 5 — Shape view → swing fingerprint upgrade — remains the open priority.

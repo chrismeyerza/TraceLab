@@ -3,11 +3,19 @@
     --bg-elev-1: #111613;
     --bg-elev-2: #161c19;
     --bg-elev-3: #1d2520;
-    --border: #232b27;
-    --border-strong: #2f3a33;
-    --text: #e8ede9;
-    --text-dim: #8a958d;
-    --text-faint: #555e57;
+    --border: #2a332e;
+    --border-strong: #3a4640;
+    /* Five-tier text palette, mapped to information hierarchy:
+       text-strong  ~96% — headlines, big numbers, "this matters"
+       text         ~88% — body, ordinary chart labels, table values
+       text-dim     ~72% — supporting captions, secondary labels (was ~56%)
+       text-faint   ~55% — metadata, sub-text, range/n callouts (was ~36%)
+       text-mute    ~38% — actually disabled / decorative chrome only */
+    --text-strong: #f2f6f3;
+    --text: #dfe5e1;
+    --text-dim: #b1bbb4;
+    --text-faint: #889189;
+    --text-mute: #5a6359;
     --green: #4ade80;
     --green-deep: #16a34a;
     --green-glow: rgba(74, 222, 128, 0.15);
@@ -126,12 +134,13 @@
   .page-meta {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: var(--text-dim);
+    color: var(--text);
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    font-weight: 500;
     text-align: right;
   }
-  .page-meta div + div { margin-top: 3px; }
+  .page-meta div + div { margin-top: 4px; color: var(--text-dim); font-weight: 400; }
 
   /* CARDS */
   .card {
@@ -148,8 +157,8 @@
   }
   .card-title {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
+    font-size: 12px;
+    color: var(--text-strong);
     text-transform: uppercase;
     letter-spacing: 0.14em;
     font-weight: 600;
@@ -160,10 +169,11 @@
   }
   .card-subtitle {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--text-faint);
+    font-size: 11px;
+    color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    font-weight: 500;
   }
 
   /* FILTER BAR */
@@ -556,12 +566,12 @@
   .insight.bad { border-left-color: var(--red); }
   .insight-title {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--green);
     text-transform: uppercase;
     letter-spacing: 0.14em;
     font-weight: 700;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
   .insight.warn .insight-title { color: var(--amber); }
   .insight.bad .insight-title { color: var(--red); }
@@ -598,10 +608,10 @@
   /* SESSION LIST */
   .session-row {
     display: grid;
-    grid-template-columns: 110px 1fr 100px 100px 100px 40px;
+    grid-template-columns: 110px 1fr 100px 100px 100px 80px;
     align-items: center;
     gap: 12px;
-    padding: 12px 14px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
@@ -609,13 +619,13 @@
   }
   .session-row:hover { background: var(--bg-elev-2); }
   .session-row.header {
-    color: var(--text-faint); font-size: 9px;
+    color: var(--text-dim); font-size: 10px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.14em;
   }
-  .session-row .clubs { display: flex; gap: 4px; }
+  .session-row .clubs { display: flex; gap: 4px; flex-wrap: wrap; }
   .club-tag {
-    padding: 1px 6px; border-radius: 3px;
-    font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 3px;
+    font-size: 10px; font-weight: 700;
     letter-spacing: 0.02em;
   }
   .club-tag.PW { background: rgba(251, 191, 36, 0.15); color: var(--pw); }
@@ -778,20 +788,23 @@
     font-weight: 600;
   }
 
-  /* Caption: now meaningfully readable. Strong numeric portion in text colour,
-     descriptive bits dim but not invisible. */
+  /* Caption sits below the gauge. Two parts joined by a visual separator:
+     - The 1σ band is the headline insight (full text colour, weight 600)
+     - Range + n is supporting context (faint, but readable now) */
   .gauge-caption {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     margin-top: 8px;
     letter-spacing: 0.02em;
+    line-height: 1.5;
   }
   .gauge-caption-strong {
     color: var(--text);
-    font-weight: 500;
+    font-weight: 600;
   }
   .gauge-caption-dim {
     color: var(--text-faint);
+    font-weight: 500;
   }
 
   /* SHOT SHAPE GRID */
@@ -855,9 +868,10 @@
     align-items: center;
   }
   .club-summary.header {
-    color: var(--text-faint);
+    color: var(--text-dim);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
+    font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.14em;
     padding: 10px 16px;
@@ -872,10 +886,10 @@
     font-family: 'JetBrains Mono', monospace;
   }
   .club-summary-cell .v {
-    font-size: 14px; font-weight: 600; color: var(--text);
+    font-size: 15px; font-weight: 600; color: var(--text-strong);
   }
   .club-summary-cell .v.dim { color: var(--text-dim); font-size: 12px; }
   .club-summary-cell .l {
-    font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
-    margin-top: 2px;
+    font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
+    margin-top: 3px; font-weight: 500;
   }

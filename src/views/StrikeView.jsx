@@ -79,17 +79,17 @@ function StrikePerClub({ shots, units }) {
           <div key={club} className="plot-container" style={{ padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
               <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: clubColor(club) }}>{club}</span>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
                 n = {clubShots.length}
               </span>
             </div>
             <SinglePlot shots={clubShots} club={club} units={units} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 10, fontFamily: 'JetBrains Mono', fontSize: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 10, fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--text-dim)', fontWeight: 500 }}>
               <div>
-                CENTROID <span style={{ color: 'var(--text)' }}>{meanH.toFixed(1)},{meanV.toFixed(1)}</span>
+                CENTROID <span style={{ color: 'var(--text)', fontWeight: 700 }}>{meanH.toFixed(1)},{meanV.toFixed(1)}</span>
               </div>
               <div>
-                1σ <span style={{ color: 'var(--text)' }}>±{sdH.toFixed(1)},±{sdV.toFixed(1)}</span>
+                1σ <span style={{ color: 'var(--text)', fontWeight: 700 }}>±{sdH.toFixed(1)},±{sdV.toFixed(1)}</span>
               </div>
             </div>
           </div>
@@ -201,13 +201,13 @@ function SinglePlot({ shots, club, units }) {
         <circle cx={xToPx(meanH)} cy={yToPx(meanV)} r="2.5" fill="var(--text)" />
         <circle cx={xToPx(meanH)} cy={yToPx(meanV)} r="6" fill="none" stroke="var(--text)" strokeWidth="0.5" strokeDasharray="1 1" />
       </svg>
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 6, fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-dim)' }}>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8, fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
         <span style={{ color: 'var(--green)' }}>● {bandCount('centred')} centred</span>
         <span style={{ color: 'var(--amber)' }}>● {bandCount('near')} near</span>
         <span style={{ color: 'var(--red)' }}>● {bandCount('off') + bandCount('miss')} off+</span>
       </div>
       {shots.length >= 3 && (
-        <div style={{ textAlign: 'center', marginTop: 4, fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--text-faint)', letterSpacing: '0.05em' }}>
+        <div style={{ textAlign: 'center', marginTop: 6, fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.05em', fontWeight: 500 }}>
           DASHED OUTLINE = CONSISTENCY ZONE · ~68% OF SHOTS · σ {Math.hypot(sdH, sdV).toFixed(1)}mm
         </div>
       )}
@@ -361,11 +361,11 @@ function ToleranceReference() {
           })}
         </tbody>
       </table>
-      <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+      <div style={{ marginTop: 14, fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
         Distance is measured from the geometric centre of the face — combined toe-heel and low-high.{' '}
-        <span style={{ color: 'var(--green)' }}>Centred</span> is the pure-energy-transfer zone where ball-speed loss is essentially zero.{' '}
-        <span style={{ color: 'var(--amber)' }}>Near</span> shots typically cost 1-3% ball speed.{' '}
-        <span style={{ color: 'var(--red)' }}>Off</span> shots cost 3-8% — that's 5-15 yards on a 7-iron.{' '}
+        <span style={{ color: 'var(--green)', fontWeight: 600 }}>Centred</span> is the pure-energy-transfer zone where ball-speed loss is essentially zero.{' '}
+        <span style={{ color: 'var(--amber)', fontWeight: 600 }}>Near</span> shots typically cost 1-3% ball speed.{' '}
+        <span style={{ color: 'var(--red)', fontWeight: 600 }}>Off</span> shots cost 3-8% — that's 5-15 yards on a 7-iron.{' '}
         Beyond that is a miss; expect bigger losses and worse dispersion.
       </div>
     </>
