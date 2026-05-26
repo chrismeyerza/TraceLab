@@ -48,9 +48,9 @@ export default function OverviewView({ shots, sessions, rightHanded, units }) {
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
           <div className="card-title">
-            <span className="num">01</span>By club · averages
+            <span className="num">01</span>By club · typical values
           </div>
-          <div className="card-subtitle">Smash · Carry · Launch · Spin · Descent · Strike</div>
+          <div className="card-subtitle">10% trimmed mean (outliers dropped) · matches Flight & Distance views</div>
         </div>
         <div style={{ margin: '0 -20px' }}>
           <div className="club-summary header">
@@ -70,9 +70,14 @@ export default function OverviewView({ shots, sessions, rightHanded, units }) {
             const fih = summarize(clubShots, 'faceImpactH');
             const fiv = summarize(clubShots, 'faceImpactV');
             const w = getWindow(club);
-            const bsDisp = bs ? convertSpeed(bs.mean, units.speed) : null;
+            // Display the 10% trimmed mean (drops top + bottom 10% of values,
+            // averages the rest). Outlier-robust without sacrificing data the
+            // way a median would. The σ is the FULL-sample standard deviation
+            // — spread should reflect outliers since that's the variability
+            // story we're telling.
+            const bsDisp = bs ? convertSpeed(bs.trimmedMean, units.speed) : null;
             const bsSdDisp = bs ? convertSpeed(bs.stdev, units.speed) : 0;
-            const caDisp = ca ? convertDistance(ca.mean, units.distance) : null;
+            const caDisp = ca ? convertDistance(ca.trimmedMean, units.distance) : null;
             const caSdDisp = ca ? convertDistance(ca.stdev, units.distance) : 0;
             return (
               <div className="club-summary" key={club}>
@@ -89,8 +94,8 @@ export default function OverviewView({ shots, sessions, rightHanded, units }) {
                   <div className="l">{speedLabel(units.speed)}</div>
                 </div>
                 <div className="club-summary-cell">
-                  <div className="v">{sm ? sm.mean.toFixed(2) : '—'}</div>
-                  <div className="l">{benchmark(sm?.mean, w.smash)}</div>
+                  <div className="v">{sm ? sm.trimmedMean.toFixed(2) : '—'}</div>
+                  <div className="l">{benchmark(sm?.trimmedMean, w.smash)}</div>
                 </div>
                 <div className="club-summary-cell">
                   <div className="v">
@@ -100,11 +105,11 @@ export default function OverviewView({ shots, sessions, rightHanded, units }) {
                   <div className="l">{distLabel(units.distance)} carry</div>
                 </div>
                 <div className="club-summary-cell">
-                  <div className="v">{sp ? Math.round(sp.mean).toLocaleString() : '—'}</div>
-                  <div className="l">{benchmark(sp?.mean, w.spin)}</div>
+                  <div className="v">{sp ? Math.round(sp.trimmedMean).toLocaleString() : '—'}</div>
+                  <div className="l">{benchmark(sp?.trimmedMean, w.spin)}</div>
                 </div>
                 <div className="club-summary-cell">
-                  <div className="v">{fih && fiv ? `${fih.mean.toFixed(1)},${fiv.mean.toFixed(1)}` : '—'}</div>
+                  <div className="v">{fih && fiv ? `${fih.trimmedMean.toFixed(1)},${fiv.trimmedMean.toFixed(1)}` : '—'}</div>
                   <div className="l">centroid mm</div>
                 </div>
               </div>
