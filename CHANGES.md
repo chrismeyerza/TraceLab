@@ -1,111 +1,118 @@
-# Changes — Path labelling + pillared Insights (PR 4.5)
+# Changes — Flight gauges refresh + Overview trimmed means (PR 4.6)
 
-Two changes bundled because both touch Overview/Shape areas.
+Focused FlightView overhaul addressing eight specific issues raised in review,
+plus the Overview per-club table switched to the same statistic for consistency.
 
-## 1. Path values now show I-O / O-I direction tags
+## What was wrong with the Flight gauges
 
-Foresight FSX Play labels Club Path with a directional tag: I-O (in-to-out)
-or O-I (out-to-in). The numeric value alone is opaque without that tag —
-"+2.1°" is meaningless to a casual reader, "+2.1° I-O" tells you it's an
-inside-out swing.
+1. **Data clipped off-axis.** Your 7i averages 4,498 rpm but the spin chart axis started at 5,500 — your typical shot was invisible, pinned to the left edge.
+2. **Headline value disconnected from marker.** The number on the right of each gauge had no visual link to where the marker sat on the bar.
+3. **"Average" was ambiguous.** Was it mean? Median? Trimmed? Wasn't said. Turned out to be plain arithmetic mean — outlier-sensitive on small samples.
+4. **Caption unreadable.** `--text-faint` colour was too dim to read on the dark theme.
+5. **σ notation cryptic.** "σ ±2.1°" doesn't immediately convey what it means.
+6. **Green zone too faint.** 15% opacity green wash — easy to miss the target.
+7. **Shot markers invisible.** 1px dim ticks at 50% opacity — couldn't tell data points from background noise.
+8. **No labels on key zones.** Bar showed colours but no words explaining what they meant.
 
-Applied in three places:
-- Shape view · Face & Path table (the one you flagged)
-- Shape view · Face-vs-Path scatter tooltip
-- Shots view · Club tab · PATH column
+## What's now in place
 
-A shared `formatPath()` helper now lives in `lib/shape.js` so all three call
-the same code. Rules:
-- `> +0.5°` → `+N.N° I-O` (inside-out, draw-promoting)
-- `< -0.5°` → `−N.N° O-I` (out-to-in, fade-promoting)
-- Within ±0.5° → `+N.N° SQ` (effectively square)
+### Auto-expanding axis
+Each gauge now bounds its axis to `union(benchmark window, actual data range) + 5% padding`. So if your data falls outside the published window — like your 7i spin — the axis stretches to include it. The optimal zone is still drawn at the same numerical position; it just occupies a smaller fraction of the chart.
 
-## 2. Insights restructured into five analytical pillars
+Concrete: with your data, the 7i spin chart now runs 4,300 → 8,700 rpm. Your typical shot at 4,498 sits at ~4.5% from the left edge (clearly visible). The optimal zone sits at 50–73% along the axis.
 
-The old Insights card was overwhelmingly strike-focused — four of five rule
-families targeted strike location, which meant a single problematic club
-could generate three or four redundant "your strike is off" insights and
-crowd out genuinely different concerns from other parts of the game.
+### Anchored value label
+The headline value is now positioned **directly above the marker on the bar**. Where it says the number is exactly where the data point sits. Edge-cases handled: if the marker is near the left or right edge, the label clamps to the edge so it never gets clipped.
 
-New structure: insights now live under five pillars, each rendered as its
-own labelled section within the Insights card.
+### 10% trimmed mean (the "typical" value)
+The headline number is now the **10% trimmed mean** — drop the top and bottom 10% of values, average the rest. Best of both: uses most of your data (80%), drops the outliers that drag a raw mean around. With typical sessions of 5–30 shots per club, this is meaningfully better than ordinary mean. Below 5 shots it degrades safely to ordinary mean.
 
-| Pillar | What it covers | Rules |
-|---|---|---|
-| **Strike** | Where you hit the face | Strike quality summary (off-centre %, directional bias, speed cost) |
-| **Flight** | Launch, spin, descent | Launch high/low, Spin high/low, Descent shallow (irons/wedges only) |
-| **Distance** | Carry & gapping | Strike-quality cost per club, adjacent-club gap problems |
-| **Shape** | Path, face, curve | Dominant shape, per-club path bias, per-club face-to-path |
-| **Consistency** | Repeatability | Carry dispersion (CV), club-path variability |
+The label "TYPICAL" sits beneath the number, so you always know what the figure is.
 
-Each pillar capped at 3 insights so no pillar dominates. Within a pillar,
-ordering is `bad` → `warn` → info-level so the worst issues surface first.
+### Punchy optimal zone
+- Green fill bumped from 15% → 32% opacity
+- Borders bumped to 1.5px at 90% opacity
+- Small "OPTIMAL" text label centred in the zone
+- Subtle inset highlight for depth
 
-Visual: each pillar gets a section header in its accent colour (red for
-Strike, amber for Flight, green for Distance, blue for Shape, purple for
-Consistency) with a thin underline. Easy to skim, easy to scan to the
-pillar you care about.
+### Visible shot markers
+- Filled circles in the **club's signature colour**, 6px diameter
+- 1px black outline so dots remain visible against the green zone
+- Overlapping dots stack visibly — itself a useful density signal
 
-## Other improvements baked in
+### Typical-shot marker upgrade
+- Vertical line through the track (white, 2px, with subtle glow)
+- Small downward-pointing triangle anchored at the top edge of the track
 
-**Consolidated strike rule.** The old four rules (strike cost, horizontal
-bias, vertical bias, smash factor) all fired on the same underlying problem.
-Consolidated into a single per-club "strike quality" rule that combines
-off-centre %, directional bias, and carry cost into one richer insight.
-Result: each club generates one strike insight at most, not four.
+### Acceptable-range markers
+Soft 1px vertical lines at `absMin` and `absMax` (the wider "acceptable" boundary that's broader than the optimal zone). Reads as "anywhere between these soft lines is still OK; the green band is just where tour players cluster".
 
-**Honest about insufficient data.** Every rule requires `MIN_SHOTS_PER_CLUB`
-(5) shots minimum before firing. Avoids the "we made up an insight from
-3 shots of noise" failure mode.
+### Readable caption
+Replaced the dim, cryptic σ caption with:
 
-**Per-rule guardrails.** Some rules need extra context — e.g. Descent
-Shallow only fires for irons/wedges (drivers and woods are *meant* to descend
-shallow). Spin-loft considerations baked into the flight pillar.
+> **1σ band 12.3°–16.1°** · range 9.4°–17.8° · n = 24
 
-## What you'll see on YOUR data right now
+- "1σ band" gives you the precise statistical meaning — same information as σ but expressed as a concrete numerical range
+- Range = actual min–max of all your shots
+- n = sample size
 
-Running PR 4.5 against your current 22-shot dataset, expect insights like:
+The 1σ band uses the σ of the **full** sample, not the trimmed sample — σ is supposed to describe spread including outliers, so trimming would understate variability. Standard practice in robust statistics.
 
-**Strike pillar:**
-- `7i · Strike quality` — % off-centre + speed cost + 8.3 yd carry loss
+### Scale labels reorganised
+Endpoint labels (axis min, axis max) pinned to the bar edges. The two optimal-zone boundary labels (`idealLow`, `idealHigh`) now float above their actual numerical positions on the bar — not evenly distributed.
 
-**Flight pillar:**
-- `50° · Launch high` (24° vs 16-20° optimal — ballooning)
-- `7i · Spin low` (4,500 rpm vs 6,500-7,500 — shallow/de-lofted delivery)
-- `7i · Descent shallow` (32.5° vs 42-48° — won't hold green)
-- `50° · Descent shallow` (36.5° vs 42-48°)
+## Overview per-club table consistency
 
-**Distance pillar:**
-- `7i · Strike-quality cost` (+8.3 yds available if you cleaned up strikes)
+For the same data to show the same number across the app, the Overview per-club "averages" table is now also using the **10% trimmed mean** rather than arithmetic mean:
 
-**Shape pillar:**
-- `7i · Face-to-Path` (−3.8° — strong closed-to-path delivery = draw bias)
+- Ball Speed, Smash, Carry, Spin → trimmed-mean values
+- Strike Centroid (faceImpactH/V) → trimmed-mean coordinates
+- σ in the ±X ranges stays as full-sample σ (same reason as Flight)
 
-**Consistency pillar:**
-- `7i · Carry inconsistency` (CV 10%)
-- `50° · Carry inconsistency` (CV 11%)
+The card subtitle now says **"10% trimmed mean (outliers dropped) · matches Flight & Distance views"** so the user always knows what they're looking at without checking the docs.
 
-That's 8-10 distinct insights across the full game, vs the ~3-4 strike-
-heavy ones you were getting before. Much more useful for figuring out where
-to spend your practice time.
+Card title also updated: "By club · averages" → **"By club · typical values"** for accuracy.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/shape.js` | New `formatPath()` helper |
-| `src/views/ShapeView.jsx` | Use `formatPath` in Face & Path table + tooltip |
-| `src/views/ShotsView.jsx` | Use `formatPath` in PATH column |
-| `src/views/OverviewView.jsx` | Insights function fully rewritten with pillar structure + new rule families |
+| `src/lib/stats.js` | New `trimmedMean()` helper; `summarize()` now includes both raw mean and trimmed mean |
+| `src/views/FlightView.jsx` | FlightGauge rewritten — anchored label, axis expand, dots, triangle marker, readable caption |
+| `src/views/OverviewView.jsx` | Per-club table switched to trimmed means; card title/subtitle updated |
+| `src/index.css` | Gauge styles overhauled — punchier zone, larger dots, anchored-label rules, scale-mid positioning, readable caption styles |
 
 ## What's NOT changed
 
-- Storage / parser / FilterBar / Distance view / Strike view unchanged
-- Per-club averages table in Overview unchanged
+The Insights rules (Strike/Flight/Distance/Shape/Consistency pillars at the
+bottom of Overview) still use plain mean internally for rule triggering. Insights
+are guarded by `MIN_SHOTS_PER_CLUB = 5` and trigger on thresholds — outlier
+sensitivity is less critical. If we ever see misleading insights from outliers
+we can switch those to trimmedMean too.
+
+## What you'll see specifically with YOUR data
+
+**Overview · per-club table** — your 7i carry typical might shift by 2-5 yards
+vs the old mean (depending on how outlier-heavy your dataset is). Smash and
+ball speed similarly. The σ values stay the same.
+
+**Flight · 7i spin gauge** — axis now 4,300–8,700 rpm. Your typical (4,498 rpm)
+sits visibly near the left edge. Optimal zone 6,500–7,500 takes up the right
+half. Clearly tells you "spin is well below optimal".
+
+**Flight · 7i descent gauge** — your typical 32.5° with optimal 42–48°. Your
+shots cluster around 32–33° (well below optimal), the green band sits to the
+right. Visual story: "your descent is consistently shallow, not just averaging
+shallow".
+
+**Flight · 50° launch gauge** — your typical 24° with optimal 16–20°. Your
+shots cluster around 22–26°, green band 16–20° sits to the left. Visual story:
+"you're consistently ballooning this club".
+
+The new gauges should make the **shape of the problem** obvious at a glance,
+where the old version showed only the headline number.
 
 ## What's next
 
-Originally planned PR 5 was the Shape view upgrade (per-club swing
-fingerprint). With the pillared Insights now covering shape decently at
-Overview level, the Shape view rework is less urgent — happy to defer or
-proceed, your call.
+PR 5 — Shape view → swing fingerprint upgrade — remains the open priority
+from the backlog. Or other directions if you have other priorities.

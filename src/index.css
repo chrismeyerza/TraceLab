@@ -633,12 +633,12 @@
 
   /* WINDOWS / GAUGE */
   .gauge {
-    display: flex; flex-direction: column; gap: 4px;
-    margin-bottom: 16px;
+    display: flex; flex-direction: column;
+    margin-bottom: 12px;
   }
   .gauge-header {
     display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
   }
   .gauge-label {
     font-family: 'JetBrains Mono', monospace;
@@ -647,40 +647,151 @@
     text-transform: uppercase;
     letter-spacing: 0.12em;
   }
-  .gauge-value {
+  .gauge-zone-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+  }
+
+  /* Anchored typical-shot label row sits above the track, positioning the
+     value text directly above where its marker sits on the bar. */
+  .gauge-label-row {
+    position: relative;
+    height: 22px;
+    margin-bottom: 2px;
+  }
+  .gauge-typical-label {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .gauge-typical-num {
     font-family: 'JetBrains Mono', monospace;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text);
   }
+  .gauge-typical-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 600;
+    color: var(--text-faint);
+    letter-spacing: 0.15em;
+    margin-top: 1px;
+  }
+
+  /* Track + zones */
   .gauge-track {
     position: relative;
-    height: 28px;
+    height: 30px;
     background: var(--bg-elev-3);
     border-radius: 4px;
-    overflow: hidden;
+    overflow: visible; /* allow marker triangle to extend above */
   }
   .gauge-window {
     position: absolute;
     top: 0; bottom: 0;
-    background: rgba(74, 222, 128, 0.15);
-    border-left: 1px solid rgba(74, 222, 128, 0.4);
-    border-right: 1px solid rgba(74, 222, 128, 0.4);
+    background: rgba(74, 222, 128, 0.32);
+    border-left: 1.5px solid rgba(74, 222, 128, 0.9);
+    border-right: 1.5px solid rgba(74, 222, 128, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.15);
   }
-  .gauge-marker {
+  .gauge-window-label {
     position: absolute;
-    top: -3px; bottom: -3px;
-    width: 2px;
-    background: var(--text);
-    box-shadow: 0 0 6px rgba(255,255,255,0.4);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    color: rgba(74, 222, 128, 0.7);
+    letter-spacing: 0.18em;
+    pointer-events: none;
+    white-space: nowrap;
   }
-  .gauge-marker.dim { background: var(--text-dim); width: 1px; opacity: 0.5; }
+  .gauge-acceptable-edge {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: var(--border-strong);
+    opacity: 0.5;
+  }
+
+  /* Shot dots — small filled circles in club colour. Subtle outline so dots
+     remain visible against the green optimal zone fill. */
+  .gauge-dot {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+    opacity: 0.9;
+  }
+
+  /* Typical-shot marker: vertical line through the track with a small
+     downward-pointing triangle anchored at the top edge. */
+  .gauge-typical-marker {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    transform: translateX(-1px);
+    background: var(--text);
+    z-index: 2;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  }
+
+  .gauge-oob-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--amber);
+    font-weight: 700;
+  }
+  .gauge-oob-arrow.left  { left: 2px; }
+  .gauge-oob-arrow.right { right: 2px; }
+
+  /* Scale labels — endpoints at the track edges; ideal-zone markers float
+     above their actual positions on the bar (rather than evenly distributed). */
   .gauge-scale {
-    display: flex; justify-content: space-between;
+    position: relative;
+    height: 14px;
+    margin-top: 6px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 9px;
+    color: var(--text-dim);
+  }
+  .gauge-scale > span:first-child { position: absolute; left: 0; }
+  .gauge-scale > span:last-child  { position: absolute; right: 0; }
+  .gauge-scale-mid {
+    position: absolute;
+    transform: translateX(-50%);
+    color: var(--green) !important;
+    font-weight: 600;
+  }
+
+  /* Caption: now meaningfully readable. Strong numeric portion in text colour,
+     descriptive bits dim but not invisible. */
+  .gauge-caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    margin-top: 8px;
+    letter-spacing: 0.02em;
+  }
+  .gauge-caption-strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .gauge-caption-dim {
     color: var(--text-faint);
-    margin-top: 4px;
   }
 
   /* SHOT SHAPE GRID */
