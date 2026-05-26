@@ -1,105 +1,111 @@
-# Changes — Distance view (PR 4)
+# Changes — Path labelling + pillared Insights (PR 4.5)
 
-A new analytical view focused on carry, total, and run — with cohort-based
-analysis that goes beyond the "single average" number every other launch
-monitor stops at.
+Two changes bundled because both touch Overview/Shape areas.
 
-## The killer idea
+## 1. Path values now show I-O / O-I direction tags
 
-Every commercial launch monitor reports "your 7-iron carries 152 yards" as
-a single average — but that number mashes pure strikes together with toe-heel
-mishits and gives you a biased-downward result that's useless for course
-strategy.
+Foresight FSX Play labels Club Path with a directional tag: I-O (in-to-out)
+or O-I (out-to-in). The numeric value alone is opaque without that tag —
+"+2.1°" is meaningless to a casual reader, "+2.1° I-O" tells you it's an
+inside-out swing.
 
-We split each club into three cohorts and surface all three:
+Applied in three places:
+- Shape view · Face & Path table (the one you flagged)
+- Shape view · Face-vs-Path scatter tooltip
+- Shots view · Club tab · PATH column
 
-| Cohort | What it means | When to use it |
+A shared `formatPath()` helper now lives in `lib/shape.js` so all three call
+the same code. Rules:
+- `> +0.5°` → `+N.N° I-O` (inside-out, draw-promoting)
+- `< -0.5°` → `−N.N° O-I` (out-to-in, fade-promoting)
+- Within ±0.5° → `+N.N° SQ` (effectively square)
+
+## 2. Insights restructured into five analytical pillars
+
+The old Insights card was overwhelmingly strike-focused — four of five rule
+families targeted strike location, which meant a single problematic club
+could generate three or four redundant "your strike is off" insights and
+crowd out genuinely different concerns from other parts of the game.
+
+New structure: insights now live under five pillars, each rendered as its
+own labelled section within the Insights card.
+
+| Pillar | What it covers | Rules |
 |---|---|---|
-| **All shots** | Unfiltered average | The honest baseline. Useful for raw improvement tracking. |
-| **Smart** (centred + near) | Realistic playing distance | Course strategy. The distance you can rely on. |
-| **Centred only** | Pure-strike ceiling | What you could carry if everything's right. The gap to the All number = improvement potential. |
+| **Strike** | Where you hit the face | Strike quality summary (off-centre %, directional bias, speed cost) |
+| **Flight** | Launch, spin, descent | Launch high/low, Spin high/low, Descent shallow (irons/wedges only) |
+| **Distance** | Carry & gapping | Strike-quality cost per club, adjacent-club gap problems |
+| **Shape** | Path, face, curve | Dominant shape, per-club path bias, per-club face-to-path |
+| **Consistency** | Repeatability | Carry dispersion (CV), club-path variability |
 
-Cohort membership uses the per-club strike tolerance we already established
-in the Strike view — drivers get wider tolerances than wedges, so the cohort
-boundaries are appropriate to each club.
+Each pillar capped at 3 insights so no pillar dominates. Within a pillar,
+ordering is `bad` → `warn` → info-level so the worst issues surface first.
 
-The σ (±1σ range) narrows as cohorts tighten, which is itself the data
-story: "your good strikes are tight, your bad ones are wild".
+Visual: each pillar gets a section header in its accent colour (red for
+Strike, amber for Flight, green for Distance, blue for Shape, purple for
+Consistency) with a thin underline. Easy to skim, easy to scan to the
+pillar you care about.
 
-## What's on the page
+## Other improvements baked in
 
-Four cards:
+**Consolidated strike rule.** The old four rules (strike cost, horizontal
+bias, vertical bias, smash factor) all fired on the same underlying problem.
+Consolidated into a single per-club "strike quality" rule that combines
+off-centre %, directional bias, and carry cost into one richer insight.
+Result: each club generates one strike insight at most, not four.
 
-**01 · About these numbers** — short explainer of the cohort framework. Useful
-context the first time someone sees the page; gets out of the way after.
+**Honest about insufficient data.** Every rule requires `MIN_SHOTS_PER_CLUB`
+(5) shots minimum before firing. Avoids the "we made up an insight from
+3 shots of noise" failure mode.
 
-**02 · Carry & total by club** — the main per-club table. Three rows per
-club (All / Smart / Centred only), plus N, avg carry, avg total, avg run,
-±1σ range, and a Tour Reference column showing the published "amateur
-midpoint" carry for each club category.
+**Per-rule guardrails.** Some rules need extra context — e.g. Descent
+Shallow only fires for irons/wedges (drivers and woods are *meant* to descend
+shallow). Spin-loft considerations baked into the flight pillar.
 
-Rows with fewer than 3 shots in their cohort are dimmed and labelled
-"NEEDS MORE DATA" rather than showing misleading micro-sample stats.
+## What you'll see on YOUR data right now
 
-**03 · Gapping ladder** — horizontal bar chart, one bar per club, sorted
-by smart-carry distance. Falls back to all-shots carry for clubs that don't
-have enough smart-strike data (labelled "FROM ALL SHOTS"). Adjacent clubs
-whose smart-carries are within 5 yds of each other are flagged with a
-"GAP ISSUE" warning — these are the clubs doing the same job in your bag,
-worth investigating.
+Running PR 4.5 against your current 22-shot dataset, expect insights like:
 
-**04 · Cost of poor strikes** — per-club callout showing the gap between
-Centred-only carry and All-shots carry, expressed as actionable improvement
-potential ("+8.3 yds if you cleaned up your 7-iron strikes"). Clubs where
-centred-strike data is too thin, or where centred carries happen to be
-SHORTER than all (small-sample noise), are quietly filtered out — we don't
-want to suggest poor strikes go further than good ones.
+**Strike pillar:**
+- `7i · Strike quality` — % off-centre + speed cost + 8.3 yd carry loss
+
+**Flight pillar:**
+- `50° · Launch high` (24° vs 16-20° optimal — ballooning)
+- `7i · Spin low` (4,500 rpm vs 6,500-7,500 — shallow/de-lofted delivery)
+- `7i · Descent shallow` (32.5° vs 42-48° — won't hold green)
+- `50° · Descent shallow` (36.5° vs 42-48°)
+
+**Distance pillar:**
+- `7i · Strike-quality cost` (+8.3 yds available if you cleaned up strikes)
+
+**Shape pillar:**
+- `7i · Face-to-Path` (−3.8° — strong closed-to-path delivery = draw bias)
+
+**Consistency pillar:**
+- `7i · Carry inconsistency` (CV 10%)
+- `50° · Carry inconsistency` (CV 11%)
+
+That's 8-10 distinct insights across the full game, vs the ~3-4 strike-
+heavy ones you were getting before. Much more useful for figuring out where
+to spend your practice time.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/views/DistanceView.jsx` | **NEW** (370 lines) — four-card view as above |
-| `src/App.jsx` | Imports DistanceView; adds `distance` to view router |
-| `src/components/TopBar.jsx` | Adds Distance tab between Flight and Shape |
+| `src/lib/shape.js` | New `formatPath()` helper |
+| `src/views/ShapeView.jsx` | Use `formatPath` in Face & Path table + tooltip |
+| `src/views/ShotsView.jsx` | Use `formatPath` in PATH column |
+| `src/views/OverviewView.jsx` | Insights function fully rewritten with pillar structure + new rule families |
 
-No changes to storage, parser, or other views.
+## What's NOT changed
 
-## Verified against your data
-
-Quick numbers from your current 22-shot dataset:
-
-**7i (16 shots):**
-- All shots: 133.8 yds avg carry
-- Smart cohort: 141.0 yds — +7.2 yds vs honest baseline
-- Centred only: 142.1 yds (3 shots)
-- → Cost-of-poor-strikes callout: "+8.3 yds if you cleaned this up"
-
-**50° wedge (6 shots):**
-- No centred strikes yet in the data — Cost-of-poor-strikes correctly
-  hides this club (insufficient data) rather than reporting noise
-- Smart carry: 86.7 yds (3 shots)
-- All carry: 87.8 yds — these are within 1 yd of each other because the
-  "off" strikes happened to be longer than the "near" strikes in this
-  small sample. The view handles this honestly without making up an
-  improvement number.
-
-**Gap ladder:** with just 7i and 50° loaded, you'd see two bars far apart
-(54 yd gap) and no warnings. Once you log more clubs we'll get real gap
-analysis.
-
-## What's NOT in this PR (intentional)
-
-- **Median instead of mean** — could be more robust to outliers but means
-  the cohort definition is less powerful. Keeping mean for now; revisit if
-  data ever looks noisy in practice.
-- **Per-shot detail drill-in** — clicking a club row to see its individual
-  shots in a strip plot. Nice to have, not urgent (the Shots view already
-  surfaces individual shots).
-- **Carry-vs-spin scatter** — a richer view of distance loss with high-spin
-  shots. Could be useful for wedge work later.
+- Storage / parser / FilterBar / Distance view / Strike view unchanged
+- Per-club averages table in Overview unchanged
 
 ## What's next
 
-PR 5 — Shape view → Swing analysis upgrade (per-club swing fingerprint,
-delivery consistency metrics).
+Originally planned PR 5 was the Shape view upgrade (per-club swing
+fingerprint). With the pillared Insights now covering shape decently at
+Overview level, the Shape view rework is less urgent — happy to defer or
+proceed, your call.
