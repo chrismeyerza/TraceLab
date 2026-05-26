@@ -89,7 +89,7 @@ export default function OverviewView({ shots, sessions, rightHanded, units }) {
                 <div className="club-summary-cell">
                   <div className="v">
                     {bsDisp != null ? bsDisp.toFixed(1) : '—'}{' '}
-                    <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>±{bsSdDisp.toFixed(1)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-faint)', fontWeight: 500 }}>±{bsSdDisp.toFixed(1)}</span>
                   </div>
                   <div className="l">{speedLabel(units.speed)}</div>
                 </div>
@@ -100,7 +100,7 @@ export default function OverviewView({ shots, sessions, rightHanded, units }) {
                 <div className="club-summary-cell">
                   <div className="v">
                     {caDisp != null ? caDisp.toFixed(1) : '—'}{' '}
-                    <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>±{caSdDisp.toFixed(1)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-faint)', fontWeight: 500 }}>±{caSdDisp.toFixed(1)}</span>
                   </div>
                   <div className="l">{distLabel(units.distance)} carry</div>
                 </div>
@@ -500,10 +500,10 @@ function Insights({ shots, byClub, rightHanded, units }) {
         return (
           <div key={p.key}>
             <div style={{
-              fontFamily: 'JetBrains Mono', fontSize: 10, fontWeight: 700,
-              color: p.accent, letterSpacing: '0.12em',
-              textTransform: 'uppercase', marginBottom: 8,
-              paddingBottom: 6, borderBottom: `1px solid ${p.accent}33`,
+              fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: 700,
+              color: p.accent, letterSpacing: '0.14em',
+              textTransform: 'uppercase', marginBottom: 10,
+              paddingBottom: 7, borderBottom: `1px solid ${p.accent}55`,
             }}>
               {p.label} · {items.length}
             </div>

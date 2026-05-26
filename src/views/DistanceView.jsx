@@ -71,15 +71,15 @@ export default function DistanceView({ shots, units }) {
             <span className="num">01</span>About these numbers
           </div>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
+        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
           Every commercial launch monitor reports "your average carry" with a single number that mashes pure strikes
           together with toe-heel mishits. That number is honest but useless for course strategy — it's biased downward
           by your worst shots.
           <br /><br />
-          We split each club's shots three ways. <strong style={{ color: 'var(--text)' }}>All shots</strong> is the
+          We split each club's shots three ways. <strong style={{ color: 'var(--text-strong)' }}>All shots</strong> is the
           honest baseline. <strong style={{ color: 'var(--green)' }}>Smart</strong> drops "off" and "miss" strikes
           to give your realistic playing distance — the number to use for club selection on course.
-          <strong style={{ color: 'var(--text)' }}> Centred only</strong> shows your ceiling: what you carry when you
+          <strong style={{ color: 'var(--text-strong)' }}> Centred only</strong> shows your ceiling: what you carry when you
           flush it. Cohorts use the per-club strike tolerance from the Strike view.
         </div>
       </div>
@@ -278,18 +278,18 @@ function GappingLadder({ cohortsByClub, clubs, units }) {
                 </div>
               )}
             </div>
-            <div className="num" style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--text)' }}>
+            <div className="num" style={{ fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: 600, color: 'var(--text-strong)' }}>
               {displayCarry.toFixed(1)} {distLabel(units.distance)}
             </div>
-            <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--text-faint)', letterSpacing: '0.05em' }}>
+            <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.05em', fontWeight: 500 }}>
               {r.source === 'all' ? 'FROM ALL SHOTS' : 'SMART CARRY'}
             </div>
           </div>
         );
       })}
       {annotated.some((r) => r.tooClose) && (
-        <div style={{ marginTop: 12, padding: 10, background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 4, fontSize: 11, color: 'var(--text-dim)' }}>
-          <span style={{ color: 'var(--amber)', fontWeight: 600 }}>Gap warning:</span> adjacent clubs carrying within {convertDistance(5, units.distance).toFixed(0)} {distLabel(units.distance)} of each other are doing the same job. Worth checking whether you actually need both, or whether one needs a setup tweak (loft, shaft, swing change).
+        <div style={{ marginTop: 14, padding: 12, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.35)', borderRadius: 4, fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>
+          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>Gap warning:</span> adjacent clubs carrying within {convertDistance(5, units.distance).toFixed(0)} {distLabel(units.distance)} of each other are doing the same job. Worth checking whether you actually need both, or whether one needs a setup tweak (loft, shaft, swing change).
         </div>
       )}
     </div>
@@ -333,7 +333,7 @@ function CostOfPoorStrikes({ cohortsByClub, clubs, units }) {
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
         {actionable.length === 0 && (
-          <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--text-dim)', padding: 14 }}>
+          <div style={{ gridColumn: '1 / -1', fontSize: 13, color: 'var(--text-dim)', padding: 16, lineHeight: 1.5 }}>
             Not enough data to show meaningful strike-quality gains yet — keep logging sessions and this will sharpen up.
           </div>
         )}
@@ -353,14 +353,14 @@ function CostOfPoorStrikes({ cohortsByClub, clubs, units }) {
                 +{convertDistance(r.gainYds, units.distance).toFixed(1)} {dLabel}
               </span>
             </div>
-            <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-dim)', letterSpacing: '0.05em' }}>
+            <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--text-dim)', letterSpacing: '0.05em', fontWeight: 500 }}>
               {convertDistance(r.allMean, units.distance).toFixed(0)} → {convertDistance(r.centredMean, units.distance).toFixed(0)} {dLabel} on centred strikes
             </div>
           </div>
         ))}
       </div>
       {others.length > 0 && (
-        <div style={{ marginTop: 14, fontSize: 11, color: 'var(--text-faint)', fontFamily: 'JetBrains Mono', letterSpacing: '0.05em' }}>
+        <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-faint)', fontFamily: 'JetBrains Mono', letterSpacing: '0.05em', fontWeight: 500 }}>
           {others.map((r) => r.club).join(' · ')} — not enough centred-strike data yet
         </div>
       )}

@@ -120,11 +120,11 @@ export default function SessionsView({ sessions, onFile, importStatus, onDeleteS
                   ))}
                 </div>
                 <div>{s.count}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>{s.id.slice(0, 14)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', fontWeight: 500 }}>{s.id.slice(0, 14)}</div>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button
                     className="btn-secondary"
-                    style={{ padding: '3px 8px', fontSize: 9 }}
+                    style={{ padding: '4px 10px', fontSize: 10 }}
                     onClick={() => onPinSession(s)}
                     title="Filter all views to this session"
                   >
@@ -132,7 +132,7 @@ export default function SessionsView({ sessions, onFile, importStatus, onDeleteS
                   </button>
                   <button
                     className="btn-danger"
-                    style={{ padding: '3px 8px', fontSize: 9 }}
+                    style={{ padding: '4px 10px', fontSize: 10 }}
                     onClick={() => onDeleteSession(s.id)}
                   >
                     DEL
