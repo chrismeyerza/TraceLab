@@ -126,6 +126,32 @@ const makeColumns = (units) => ({
     key: 'clubPath', label: 'PATH', num: true,
     render: (s) => formatPath(s.clubPath),
   },
+  startLine: {
+    key: 'startLine', label: 'START', num: true,
+    render: (s) => {
+      // Robust to shots stored before startLine was a derived field — fall
+      // back to computing it from face + path on the fly.
+      const v = s.startLine != null
+        ? s.startLine
+        : (s.faceToTarget != null && s.clubPath != null
+            ? 0.75 * s.faceToTarget + 0.25 * s.clubPath
+            : null);
+      if (v == null) return '—';
+      return `${v > 0 ? '+' : ''}${v.toFixed(1)}°`;
+    },
+    cellStyle: (s) => {
+      const v = s.startLine != null
+        ? s.startLine
+        : (s.faceToTarget != null && s.clubPath != null
+            ? 0.75 * s.faceToTarget + 0.25 * s.clubPath
+            : null);
+      return {
+        color: v == null ? 'var(--text-dim)'
+          : Math.abs(v) > 3 ? 'var(--amber)'
+          : 'var(--text)',
+      };
+    },
+  },
   faceToTarget: {
     key: 'faceToTarget', label: 'FACE→TGT', num: true,
     render: (s) => s.faceToTarget == null ? '—' : `${s.faceToTarget > 0 ? '+' : ''}${s.faceToTarget.toFixed(1)}°`,
@@ -188,7 +214,7 @@ const TABS = {
     label: 'Club',
     cols: [
       'when', 'clubSpeed', 'clubSpeedImpact', 'angleOfAttack',
-      'clubPath', 'faceToTarget', 'faceToPath',
+      'clubPath', 'faceToTarget', 'startLine', 'faceToPath',
       'loft', 'spinLoft', 'lie', 'closureRate',
       'faceImpactH', 'faceImpactV',
     ],
