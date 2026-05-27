@@ -142,7 +142,7 @@ function DistanceTable({ cohortsByClub, clubs, units }) {
         <tr>
           <th>CLUB</th>
           <th>COHORT</th>
-          <th className="num">N</th>
+          <th className="num">% · N</th>
           <th className="num">AVG CARRY</th>
           <th className="num">AVG TOTAL</th>
           <th className="num">AVG RUN</th>
@@ -154,6 +154,11 @@ function DistanceTable({ cohortsByClub, clubs, units }) {
         {clubs.map((club) => {
           const cohorts = cohortsByClub[club];
           const tourCarry = w(club).carry?.[2]; // index 2 = tour amateur midpoint
+          // Denominator for percentages: total shots for this club (All cohort).
+          // So Smart's % is "of all the shots, this fraction are smart strikes",
+          // not "of smart strikes, this fraction are smart strikes" (which would
+          // always be 100). Same logic for Centred only.
+          const totalForClub = cohorts.all.length;
           return COHORTS.map((c, idx) => {
             const cohortShots = cohorts[c.key];
             const enoughData = cohortShots.length >= 3;
@@ -164,6 +169,7 @@ function DistanceTable({ cohortsByClub, clubs, units }) {
             const carrySd   = enoughData && carries.length >= 3 ? stdev(carries) : null;
             const totalMean = enoughData && totals.length ? mean(totals) : null;
             const runMean   = enoughData && runs.length ? mean(runs) : null;
+            const pct = totalForClub > 0 ? (cohortShots.length / totalForClub) * 100 : 0;
             return (
               <tr key={`${club}-${c.key}`} style={{
                 opacity: enoughData ? 1 : 0.45,
@@ -175,7 +181,10 @@ function DistanceTable({ cohortsByClub, clubs, units }) {
                   </td>
                 ) : null}
                 <td style={{ color: c.tone, fontWeight: 600 }}>{c.label}</td>
-                <td className="num">{cohortShots.length}</td>
+                <td className="num">
+                  <span style={{ color: 'var(--text-strong)', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+                  <span style={{ color: 'var(--text-faint)', fontWeight: 500, marginLeft: 6 }}>· {cohortShots.length}</span>
+                </td>
                 <td className="num">
                   {carryMean == null ? '—' : `${fmt(conv(carryMean))} ${dLabel}`}
                 </td>

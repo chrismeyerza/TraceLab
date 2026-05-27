@@ -664,21 +664,24 @@
     letter-spacing: 0.08em;
   }
 
-  /* Anchored typical-shot label row sits above the track, positioning the
-     value text directly above where its marker sits on the bar. */
+  /* Anchored typical-shot label row sits above the track. Also hosts the
+     OPTIMAL bracket marker which spans the green-zone position above the
+     bar. Tall enough to fit both stacked elements. */
   .gauge-label-row {
     position: relative;
-    height: 22px;
+    height: 38px;
     margin-bottom: 2px;
   }
   .gauge-typical-label {
     position: absolute;
+    top: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     line-height: 1.1;
     white-space: nowrap;
     pointer-events: none;
+    z-index: 2;
   }
   .gauge-typical-num {
     font-family: 'JetBrains Mono', monospace;
@@ -711,17 +714,32 @@
     border-right: 1.5px solid rgba(74, 222, 128, 0.9);
     box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.15);
   }
-  .gauge-window-label {
+  /* The OPTIMAL marker is now an above-track bracket. Spans the green-zone
+     width with a centred label. Sits in the label row alongside the typical
+     value — placed by absolute positioning, so the typical label and the
+     optimal label can overlap visually with z-stacking handled by source order. */
+  .gauge-optimal-marker {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 8px;
-    font-weight: 700;
-    color: rgba(74, 222, 128, 0.7);
-    letter-spacing: 0.18em;
+    top: 0;
+    height: 22px;
+    border-bottom: 2px solid rgba(74, 222, 128, 0.85);
+    border-left: 2px solid rgba(74, 222, 128, 0.85);
+    border-right: 2px solid rgba(74, 222, 128, 0.85);
+    border-radius: 0 0 4px 4px;
     pointer-events: none;
+  }
+  .gauge-optimal-tag {
+    position: absolute;
+    top: 1px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    color: rgba(74, 222, 128, 0.95);
+    letter-spacing: 0.18em;
+    background: var(--bg-elev-1);
+    padding: 0 6px;
     white-space: nowrap;
   }
   .gauge-acceptable-edge {
@@ -815,7 +833,7 @@
     margin-top: 12px;
   }
   .shape-cell {
-    padding: 10px 8px;
+    padding: 12px 8px;
     background: var(--bg-elev-2);
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -823,26 +841,62 @@
   }
   .shape-cell-name {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
-    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
   }
-  .shape-cell-count {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text);
-  }
+  /* Percentage is now the dominant number — what users actually scan for */
   .shape-cell-pct {
     font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-strong);
+    line-height: 1;
+  }
+  /* Shot count is the supporting context — small, dim */
+  .shape-cell-count {
+    font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
-    color: var(--text-dim);
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-top: 6px;
+    letter-spacing: 0.04em;
   }
   .shape-cell.has-shots { border-color: var(--border-strong); }
   .shape-cell.dominant { border-color: var(--green); background: rgba(74,222,128,0.05); }
   .shape-cell.dominant .shape-cell-name { color: var(--green); }
+  .shape-cell.dominant .shape-cell-pct { color: var(--green); }
+
+  /* Editable club chip in Shots view. The pencil icon is faintly visible by
+     default and gets brighter on hover — signals interactivity without being
+     loud. Border subtly intensifies on hover too. */
+  .club-chip-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .club-chip-edit:hover {
+    border-color: var(--cc, var(--text));
+    filter: brightness(1.15);
+  }
+  .club-chip-edit-pencil {
+    font-size: 9px;
+    opacity: 0.4;
+    margin-left: 2px;
+    transition: opacity 0.12s;
+  }
+  .club-chip-edit:hover .club-chip-edit-pencil { opacity: 1; }
 
   /* FOOTER */
   .footer {

@@ -144,7 +144,9 @@ function FlightGauge({ label, unit, window, stats, shots, clubColor }) {
         </span>
       </div>
 
-      {/* Anchored value label above the typical marker */}
+      {/* Anchored typical-shot label above the track. Right side now also
+          shows the OPTIMAL band's numerical range so the user can see
+          target numbers without squinting at the in-bar label. */}
       <div className="gauge-label-row">
         <div
           className="gauge-typical-label"
@@ -157,16 +159,24 @@ function FlightGauge({ label, unit, window, stats, shots, clubColor }) {
           <span className="gauge-typical-num">{formatVal(stats.typical, unit)}</span>
           <span className="gauge-typical-tag">TYPICAL</span>
         </div>
+        {/* Bracket-style OPTIMAL marker. Positioned directly above the green
+            zone in the track below. The window-label inside the bar is gone;
+            this replaces it. */}
+        <div
+          className="gauge-optimal-marker"
+          style={{ left: `${pct(idealLow)}%`, width: `${pct(idealHigh) - pct(idealLow)}%` }}
+        >
+          <span className="gauge-optimal-tag">OPTIMAL</span>
+        </div>
       </div>
 
       <div className="gauge-track">
-        {/* Optimal zone fill */}
+        {/* Optimal zone fill — now without an inner label, since the OPTIMAL
+            marker above takes that job. */}
         <div
           className="gauge-window"
           style={{ left: `${pct(idealLow)}%`, width: `${pct(idealHigh) - pct(idealLow)}%` }}
-        >
-          <div className="gauge-window-label">OPTIMAL</div>
-        </div>
+        />
 
         {/* Outer window soft borders so [absMin, absMax] reads as the wider
             "acceptable" band rather than being invisible */}

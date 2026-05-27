@@ -356,15 +356,16 @@ export default function ShotsView({ shots, units, allClubs, onUpdateShot, onUpda
                   <td>
                     <button
                       onClick={() => setEditing(editing === s.id ? null : s.id)}
+                      className="club-chip-edit"
                       style={{
-                        padding: '2px 8px', borderRadius: 3,
-                        fontFamily: 'JetBrains Mono', fontSize: 10, fontWeight: 700,
-                        background: `${clubColor(s.club)}22`, color: clubColor(s.club),
-                        border: '1px solid transparent', cursor: 'pointer',
+                        '--cc': clubColor(s.club),
+                        background: `${clubColor(s.club)}22`,
+                        color: clubColor(s.club),
                       }}
-                      title="Click to relabel"
+                      title="Click to relabel · type a tag like '7i [Mizuno]' for testing variants"
                     >
                       {s.club}
+                      <span className="club-chip-edit-pencil">✎</span>
                     </button>
                     {editing === s.id && (
                       <ClubPicker

@@ -1,156 +1,171 @@
-# Changes — Legibility pass across all views (PR 4.7)
+# Changes — Tightening pass (PR 4.8)
 
-A systemic fix to dim text problems across every menu item — Overview,
-Strike, Flight, Distance, Shape, Shots, Sessions.
+Seven focused improvements addressing review feedback across Distance,
+Strike, Flight, Shape, Filters, and Shots.
 
-## The problem this addresses
+## 1. Distance · show % then N
 
-The previous palette had three grey tiers (`--text`, `--text-dim`,
-`--text-faint`) but the dim and faint tiers were significantly under-bright
-for a dark theme. Combined with small font sizes (9–10px) and regular weight
-(400), text intended to be "subtle" became genuinely hard to read on a
-moderate-quality monitor in normal indoor lighting.
+The cohort column was just a raw shot count, which forced the user to do
+mental math against the All-shots total to figure out cohort proportions.
+Now shows percentage prominently, with shot count as a small secondary number:
 
-This wasn't a one-off bug to bump in three places — it was a systemic miscall
-across ~50 component-level usages. The fix is correspondingly system-level.
+```
+Cohort        | % · N
+─────────────────────
+All shots     | 100% · 16
+Smart         | 56%  · 9
+Centred only  | 19%  · 3
+```
 
-## What's now in place
+Percentage uses All-shots count as the denominator, so the proportions
+add up meaningfully ("19% of my 7-iron shots are centred strikes").
 
-### A rebuilt five-tier text palette
+## 2. Strike · CARRY VS CENTRED
 
-The old three tiers had a squashed contrast pyramid. The new five tiers map
-cleanly to information hierarchy:
+The old "VS YOUR CENTRED" column showed **ball speed loss** vs your
+centred strikes. That's a proxy — the user thinks in distance lost, not
+in ball speed lost.
 
-| Tier | Luminance | Use for |
+Now the column shows **% carry vs your club's centred carry**. Same
+calculation pattern (per-shot loss, averaged per band) but on the metric
+that actually matters.
+
+Calibrated colour thresholds:
+- < −4% carry → red (significant loss)
+- −1.5% to −4% → amber (meaningful loss)
+- ≥ −1.5% → green (within noise)
+
+For your 7i data with the new calculation:
+- Centred: 0% (definitional reference)
+- Near: −1.2% (within a yard or two of best)
+- Off: −10.3% (14+ yards lost per shot)
+- Miss: −25% (35 yards lost on a 7i)
+
+Much more actionable than the old 3-5-8% ball-speed numbers.
+
+## 3. Flight · OPTIMAL label above the chart
+
+The "OPTIMAL" text label was painted inside the green zone, where it
+competed with the dot markers and visually crowded the bar. Moved to a
+bracket-style marker above the track:
+
+- Green border bracket spans the optimal range horizontally
+- "OPTIMAL" tag centred on the bracket, sitting just above the track
+- Inside-bar green-zone fill remains, but without text overlay
+
+Clean visual: the bar shows where shots are, the bracket above shows
+where they should be.
+
+## 4. Shape · % primary, N secondary in each cell
+
+Old hierarchy:
+
+```
+Pull Hook
+  6
+  29%
+```
+
+New hierarchy:
+
+```
+Pull Hook
+  29%
+  6 shots
+```
+
+Percentage is the dominant number (font-size 22, weight 700,
+text-strong); count drops to a small secondary line.
+
+## 5. Shape · loosened thresholds + honest bucketing
+
+The Pull Hook bucket was firing at 43% on your 7i data because of two
+overlapping problems:
+
+**A. Thresholds too aggressive.** A 1.5° face delivery was being called
+"Pull"; a 0.5° face-to-path was being called "Draw". Both are essentially
+square. New thresholds:
+
+| Face direction      | Was   | Now  |
 |---|---|---|
-| `--text-strong` (NEW) | ~96% white | Headline numbers, big values, "this matters" |
-| `--text` | ~88% white | Body text, ordinary chart labels, table values |
-| `--text-dim` | ~72% (was 56%) | Supporting captions, secondary labels |
-| `--text-faint` | ~55% (was 36%) | Metadata, sub-text, range/n callouts |
-| `--text-mute` (NEW) | ~38% | Actually disabled / decorative chrome only |
+| Push/Pull kicks in  | ±1.5° | ±4°  |
+| Slight Draw/Fade    | ±0.5° | ±0.7°|
+| Draw/Fade           | ±2°   | ±2°  |
+| Hook/Slice (NEW)    | —     | ±5°  |
 
-The two existing tiers got pulled up by 12–19 percentage points each — the
-single highest-leverage change in this PR. That ripples through every
-component that uses the variables (around 50 CSS rules plus ~12 inline JSX
-usages).
+**B. Bucketing was inflated.** "Pull Draw" (a controlled left-curving
+shot) was collapsing to the corner "Pull Hook" cell. Now controlled
+draws — regardless of whether they started slightly left, right, or
+straight — collapse to the middle-row "Draw" cell. The corner Pull Hook
+cell only fills with genuinely severe curves.
 
-### Border colours nudged brighter
+**Result on your 7i data:**
 
-`--border` and `--border-strong` got tiny brightness bumps so the lines
-separating cards, rows, and dividers are visible without being loud. Was
-making the layout feel "blurry" at the edges.
+- Old: Pull Hook 43%, Draw ~5%
+- New: Pull Hook 29%, Draw 33% (these were always draws, just mislabelled)
 
-### Targeted structural fixes on top of the palette
+Plus your remaining 29% in Pull Hook is genuinely severe — face-to-path
+values from −5° to −15°. Honest labelling: you really are producing
+severe closed-face deliveries that often on your 7i.
 
-Where the palette alone wasn't enough — usually because text was also too
-small or too light-weight to read — there are individual class-level fixes:
+## 6. Filter ALL · single-click focuses, cmd-click toggles
 
-**Card titles** — bumped from 11px `--text-dim` to 12px `--text-strong`,
-weight 600. They're top-of-card headings, they should command attention.
+Old behaviour: clicking a club chip toggled it in/out of the selection.
+To focus on just one club, you had to deselect every other chip
+individually — painful with 10+ clubs loaded.
 
-**Card subtitles** — bumped from 10px `--text-faint` to 11px `--text-dim`,
-weight 500. Was the smallest-thinnest-dimmest combination on the page.
+New behaviour matches every list-selection UI (file managers,
+spreadsheets, design tools):
 
-**Page meta lines** — first line in full `--text` weight 500; second line
-in dim weight 400. Old version had both lines at the same dim level.
+- **Plain click on a chip** → focus on ONLY this club (replaces selection)
+- **Cmd-click / Ctrl-click on a chip** → toggle in/out of current selection
+- **Click ALL** → select everything (unchanged)
+- **Click the only-active chip again** → reset to ALL (escape hatch)
 
-**Club summary table cells** — values bumped from 14px to 15px in
-`--text-strong`. Labels (the "mph" / "yd carry" / "shots" sub-text) bumped
-from 9px `--text-faint` to 10px `--text-faint` weight 500. Header row from
-9px to 10px weight 600.
+Tooltip on each chip: "Click to focus on just this club · Cmd/Ctrl-click
+to add to selection".
 
-**±σ annotations** (Overview per-club table) — bumped from 10px to 11px,
-added weight 500. Was barely visible.
+## 7. Shots · clearer club chip edit affordance
 
-**Strike tolerance explainer** — bumped from 12px `--text-dim` to 13px
-`--text`. Bold colour callouts (Centred / Near / Off) got weight 600.
+The club chip on each shot row had a subtle hover-only colour. New
+treatment:
 
-**Strike per-club plot headers** — n-count bumped from 10px `--text-faint`
-to 11px `--text-dim` weight 600. Stats line below the plot bumped from 10px
-to 11px with stronger value text.
+- ✎ pencil icon next to the club label, faint by default, fully visible
+  on hover
+- Border intensifies on hover to clearly signal interactivity
+- Tooltip mentions tagging convention: "Click to relabel · type a tag
+  like '7i [Mizuno]' for testing variants"
 
-**Strike band-count line** ("● 3 centred ● 6 near ● 7 off+") — bumped from
-10px `--text-dim` to 11px weight 600.
-
-**Strike consistency-zone caption** — bumped from 9px to 10px weight 500.
-
-**Insight title** — bumped from 10px to 11px.
-
-**Insight pillar headers** — bumped from 10px to 12px weight 700, with
-stronger border colour (33 → 55 alpha).
-
-**Distance explainer** — bumped from 12px `--text-dim` to 13px `--text`,
-with `--text-strong` for the bold callouts.
-
-**Distance gap warning** — bumped from 11px `--text-dim` to 13px `--text`,
-with weight 700 amber callout and stronger border.
-
-**Distance ladder labels** — carry numbers bumped from 11px to 12px weight
-600 in `--text-strong`. Source tag ("FROM ALL SHOTS" / "SMART CARRY")
-bumped from 9px to 10px weight 500.
-
-**Distance cost-of-poor-strikes secondary text** — bumped from 10px
-`--text-dim` to 11px weight 500.
-
-**Distance empty state** — bumped from 12px to 13px with line-height 1.5.
-
-**Sessions list header** — bumped from 9px `--text-faint` to 10px
-`--text-dim` weight 600.
-
-**Sessions list rows** — ID column from 10px `--text-faint` to 11px weight
-500. Action buttons (VIEW / DEL) from 9px to 10px with more padding so
-they're easier to click.
-
-**Sessions grid** — widened action column from 40px to 80px so VIEW and DEL
-buttons fit without crowding.
-
-**Club tag chips** in sessions — bumped padding and weight from 600 to 700.
-
-**Flight gauge caption** — `gauge-caption-dim` now has weight 500 (was
-default 400). Combined with brighter `--text-faint`, the "range X · n=Z"
-portion is now clearly readable while staying lower-emphasis than the 1σ band.
-
-## What you should now experience
-
-The test I committed to was: **you should be able to read every piece of
-text on every screen with a glance, in a moderately lit room, without
-leaning forward**. After this pass:
-
-- Card subtitles, page meta lines, and explainer text all sit at readable
-  contrast across all views
-- The ±σ ranges next to your per-club averages are visible at a normal
-  reading distance
-- The "range X–Y" / "n = Z" caption on each Flight gauge is clearly readable
-- The Strike explainer text reads like prose, not metadata
-- The Distance gap warning has the visual weight it needs
-- Session IDs, club tags, and action buttons are properly distinguished
-
-If any specific spot still looks under-bright, tell me where and I'll bump
-it surgically — this is a starting state for the palette, not a final one.
+The tooltip primes the future per-shot tagging workflow we discussed —
+users will see the convention without needing a separate UI.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/index.css` | Palette rebuild (5-tier system); ~20 class-level adjustments to text sizing/weight/colour |
-| `src/views/OverviewView.jsx` | ±σ annotations bumped; insight pillar header bumped |
-| `src/views/StrikeView.jsx` | Tolerance explainer bumped; per-club plot header/stats/band-count line bumped; consistency caption bumped |
-| `src/views/DistanceView.jsx` | Explainer / gap warning / ladder labels / cost cards / empty state all bumped |
-| `src/views/SessionsView.jsx` | ID column and action buttons bumped; column widths adjusted |
+| `src/lib/shape.js` | Threshold rebuild + bucket-mapping reflecting honest curve severity |
+| `src/views/DistanceView.jsx` | % · N column instead of raw N |
+| `src/views/StrikeView.jsx` | Centred-carry reference per club; carry-loss % display + recolouring; header text |
+| `src/views/FlightView.jsx` | OPTIMAL bracket moved above track; old in-bar label removed |
+| `src/views/ShapeView.jsx` | Cell content reordered: name → % → count |
+| `src/views/ShotsView.jsx` | Club chip uses new `.club-chip-edit` class with pencil icon |
+| `src/components/FilterBar.jsx` | New `clickClub` with focus + modifier behaviour |
+| `src/index.css` | New rules: `.gauge-optimal-marker`, `.club-chip-edit*`; updated `.shape-cell-*` hierarchy; taller `.gauge-label-row`; old `.gauge-window-label` removed |
 
-## What's NOT in this PR
+## Tested
 
-- No logic changes anywhere — no statistics rewritten, no new features
-- No new components or new views
-- No breaking changes to the data model
-
-This is purely a visual hygiene PR. Safe to apply and revert.
-
-## Verified
-
-Production build clean. Bundle size effectively unchanged (a few hundred
-bytes of additional CSS for the new variables).
+- Production build clean (~56KB JS / 18KB gzipped above PR 4.7's baseline)
+- Shape classifier verified against your actual 22-shot dataset — Pull
+  Hook count drops from 9 to 6, with remaining 6 confirmed as genuine
+  severe closed-face deliveries (face-to-path −5° to −15°)
+- Strike carry-vs-centred verified — produces the expected pattern
+  (0% / −1% / −10% / −25%) on your 7i
 
 ## What's next
 
-PR 5 — Shape view → swing fingerprint upgrade — remains the open priority.
+Pending from the queue:
+- **PR 4.9** — Per-shot tagging via the club label (the `7i [Mizuno]`
+  workflow we discussed)
+- **PR 5** — Per-club swing fingerprint view (the original Shape upgrade)
+- **PR 6+** — User name on import, session tags, export/import,
+  MongoDB sync

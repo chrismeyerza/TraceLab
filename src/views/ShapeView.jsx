@@ -59,8 +59,8 @@ export default function ShapeView({ shots, rightHanded }) {
                   style={dominant ? {} : { backgroundColor: `rgba(74, 222, 128, ${intensity * 0.08})` }}
                 >
                   <div className="shape-cell-name">{cell.name}</div>
-                  <div className="shape-cell-count">{cell.shots.length}</div>
                   <div className="shape-cell-pct">{pct.toFixed(0)}%</div>
+                  <div className="shape-cell-count">{cell.shots.length} shot{cell.shots.length === 1 ? '' : 's'}</div>
                 </div>
               );
             })}

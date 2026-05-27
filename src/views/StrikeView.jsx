@@ -245,6 +245,18 @@ function StrikeZoneTable({ shots, units }) {
     centredBSByClub[c] = ref.length ? mean(ref.map((s) => s.ballSpeed)) : null;
   }
 
+  // Per-club centred-shot carry — the reference distance each band is compared
+  // against. Uses median rather than mean so a single freakishly long centred
+  // strike doesn't make every other shot look bad. Same shape as centredBSByClub.
+  const centredCarryByClub = {};
+  for (const c of [...new Set(shots.map((s) => s.club))]) {
+    const ref = shots.filter((s) => {
+      const cl = classifyStrike(s.club, s.faceImpactH, s.faceImpactV);
+      return cl && cl.band === 'centred' && s.club === c && s.carry != null;
+    });
+    centredCarryByClub[c] = ref.length ? mean(ref.map((s) => s.carry)) : null;
+  }
+
   const bands = ['centred', 'near', 'off', 'miss'];
   const labelByBand = {
     centred: 'CENTRED',
@@ -270,7 +282,7 @@ function StrikeZoneTable({ shots, units }) {
           <th className="num">AVG DIST FROM CENTRE</th>
           <th className="num">CONSISTENCY (σ)</th>
           <th className="num">AVG BALL SPEED</th>
-          <th className="num">VS YOUR CENTRED</th>
+          <th className="num">CARRY VS CENTRED</th>
           <th className="num">AVG SMASH</th>
           <th className="num">AVG CARRY</th>
         </tr>
@@ -290,11 +302,15 @@ function StrikeZoneTable({ shots, units }) {
           const bs = mean(zShots.map((s) => s.ballSpeed));
           const sm = mean(zShots.map((s) => s.efficiency).filter((v) => v != null));
           const ca = mean(zShots.map((s) => s.carry).filter((v) => v != null));
-          // Per-shot loss vs that shot's club's centred reference, then averaged
+          // Per-shot carry loss vs that shot's club's centred carry reference,
+          // then averaged. Carry is the user-meaningful metric — the actual
+          // yardage lost on course. Ball-speed loss was a proxy that didn't
+          // map cleanly to "how much shorter will this go".
           const perShotLosses = zShots
             .map((s) => {
-              const ref = centredBSByClub[s.club];
-              return ref ? ((s.ballSpeed - ref) / ref) * 100 : null;
+              const ref = centredCarryByClub[s.club];
+              if (!ref || s.carry == null) return null;
+              return ((s.carry - ref) / ref) * 100;
             })
             .filter((v) => v != null);
           const diff = perShotLosses.length ? mean(perShotLosses) : null;
@@ -308,7 +324,7 @@ function StrikeZoneTable({ shots, units }) {
               <td className="num">{convertSpeed(bs, units.speed).toFixed(1)} {speedLabel(units.speed)}</td>
               <td
                 className="num"
-                style={{ color: diff != null && diff < -3 ? 'var(--red)' : diff != null && diff < -1 ? 'var(--amber)' : 'var(--green)' }}
+                style={{ color: diff != null && diff < -4 ? 'var(--red)' : diff != null && diff < -1.5 ? 'var(--amber)' : 'var(--green)' }}
               >
                 {diff !== null ? (diff > 0 ? '+' : '') + diff.toFixed(1) + '%' : '—'}
               </td>

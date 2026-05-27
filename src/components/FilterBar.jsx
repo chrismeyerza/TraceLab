@@ -27,17 +27,31 @@ export default function FilterBar({
   timeFilter, setTimeFilter,
   pinnedSession, setPinnedSession,
 }) {
-  const toggleClub = (c) => {
-    if (selected.includes(c)) {
-      if (selected.length > 1) {
-        setSelected(selected.filter((x) => x !== c));
+  // Click behaviour matches list-selection conventions everywhere else:
+  //  Plain click   → focus on ONLY this club (replaces the entire selection)
+  //  Cmd / Ctrl    → toggle this club in/out of the existing selection (additive)
+  // The "focus" mode is by far the more common workflow ("just show me 7i")
+  // and the old behaviour required nine clicks to achieve it. The additive
+  // toggle is still reachable via modifier for users who want to pick several
+  // clubs at once.
+  const clickClub = (c, e) => {
+    const isAdditive = e && (e.metaKey || e.ctrlKey);
+    if (isAdditive) {
+      // Cmd/Ctrl-click → toggle in/out of selection. Guard against emptying
+      // it entirely (would show no data — usually accidental).
+      if (selected.includes(c)) {
+        if (selected.length > 1) setSelected(selected.filter((x) => x !== c));
       } else {
-        // Clicking the last active chip resets to ALL. Without this, the UI
-        // looked broken — click did nothing. Now there's no stuck state.
-        setSelected(clubs);
+        setSelected([...selected, c]);
       }
     } else {
-      setSelected([...selected, c]);
+      // Plain click → focus on just this club. If they re-click the chip
+      // that's already the sole selection, reset to ALL (escape hatch).
+      if (selected.length === 1 && selected[0] === c) {
+        setSelected(clubs);
+      } else {
+        setSelected([c]);
+      }
     }
   };
 
@@ -67,7 +81,8 @@ export default function FilterBar({
             <button
               key={c}
               className={`chip ${selected.includes(c) ? 'active' : ''}`}
-              onClick={() => toggleClub(c)}
+              onClick={(e) => clickClub(c, e)}
+              title="Click to focus on just this club · Cmd/Ctrl-click to add to selection"
               style={
                 selected.includes(c)
                   ? {
