@@ -1,171 +1,106 @@
-# Changes — Tightening pass (PR 4.8)
+# Changes — Shape view honest-bucketing + click-to-drill (PR 4.9)
 
-Seven focused improvements addressing review feedback across Distance,
-Strike, Flight, Shape, Filters, and Shots.
+Three focused fixes to make the Shape view trustworthy and inspectable.
 
-## 1. Distance · show % then N
+## 1. Bucketing bug fixed — Pull Hook count now honest
 
-The cohort column was just a raw shot count, which forced the user to do
-mental math against the All-shots total to figure out cohort proportions.
-Now shows percentage prominently, with shot count as a small secondary number:
+The bug: `'Hook': 'Pull Hook'` in the bucketing map was sending shots
+that started square-to-target but curved violently into the corner "Pull
+Hook" cell. The corners are meant for "started off-target AND curved
+further off-target" only — a corner should mean the shot ended up far
+left or far right.
 
-```
-Cohort        | % · N
-─────────────────────
-All shots     | 100% · 16
-Smart         | 56%  · 9
-Centred only  | 19%  · 3
-```
+A Hook with a straight start ends up further left than a draw, but it
+*didn't start* off-target. It belongs in the middle-row Draw cell.
 
-Percentage uses All-shots count as the denominator, so the proportions
-add up meaningfully ("19% of my 7-iron shots are centred strikes").
+Same bug existed for `'Slice': 'Push Slice'` (severe slice with straight
+start was being thrown into the corner instead of the middle-row Fade
+cell).
 
-## 2. Strike · CARRY VS CENTRED
+**Concrete result on your 22-shot dataset:**
 
-The old "VS YOUR CENTRED" column showed **ball speed loss** vs your
-centred strikes. That's a proxy — the user thinks in distance lost, not
-in ball speed lost.
-
-Now the column shows **% carry vs your club's centred carry**. Same
-calculation pattern (per-shot loss, averaged per band) but on the metric
-that actually matters.
-
-Calibrated colour thresholds:
-- < −4% carry → red (significant loss)
-- −1.5% to −4% → amber (meaningful loss)
-- ≥ −1.5% → green (within noise)
-
-For your 7i data with the new calculation:
-- Centred: 0% (definitional reference)
-- Near: −1.2% (within a yard or two of best)
-- Off: −10.3% (14+ yards lost per shot)
-- Miss: −25% (35 yards lost on a 7i)
-
-Much more actionable than the old 3-5-8% ball-speed numbers.
-
-## 3. Flight · OPTIMAL label above the chart
-
-The "OPTIMAL" text label was painted inside the green zone, where it
-competed with the dot markers and visually crowded the bar. Moved to a
-bracket-style marker above the track:
-
-- Green border bracket spans the optimal range horizontally
-- "OPTIMAL" tag centred on the bracket, sitting just above the track
-- Inside-bar green-zone fill remains, but without text overlay
-
-Clean visual: the bar shows where shots are, the bracket above shows
-where they should be.
-
-## 4. Shape · % primary, N secondary in each cell
-
-Old hierarchy:
-
-```
-Pull Hook
-  6
-  29%
-```
-
-New hierarchy:
-
-```
-Pull Hook
-  29%
-  6 shots
-```
-
-Percentage is the dominant number (font-size 22, weight 700,
-text-strong); count drops to a small secondary line.
-
-## 5. Shape · loosened thresholds + honest bucketing
-
-The Pull Hook bucket was firing at 43% on your 7i data because of two
-overlapping problems:
-
-**A. Thresholds too aggressive.** A 1.5° face delivery was being called
-"Pull"; a 0.5° face-to-path was being called "Draw". Both are essentially
-square. New thresholds:
-
-| Face direction      | Was   | Now  |
+| Bucket | Before PR 4.9 | After PR 4.9 |
 |---|---|---|
-| Push/Pull kicks in  | ±1.5° | ±4°  |
-| Slight Draw/Fade    | ±0.5° | ±0.7°|
-| Draw/Fade           | ±2°   | ±2°  |
-| Hook/Slice (NEW)    | —     | ±5°  |
+| Draw | 33% | **43%** ← the controlled curves now go where they belong |
+| Pull Hook | 29% | **19%** ← only genuinely severe shots remain |
+| Fade | 24% | 24% |
+| Straight | 14% | 14% |
 
-**B. Bucketing was inflated.** "Pull Draw" (a controlled left-curving
-shot) was collapsing to the corner "Pull Hook" cell. Now controlled
-draws — regardless of whether they started slightly left, right, or
-straight — collapse to the middle-row "Draw" cell. The corner Pull Hook
-cell only fills with genuinely severe curves.
+The 4 shots still in Pull Hook all have face <−4.9° AND face-to-path
+<−5.7°. Those really are pull hooks. The 2 shots that moved out had
+near-square face but severely closed-to-path delivery — i.e., they
+started near target and curved sharply left. Draws, not pull hooks.
 
-**Result on your 7i data:**
+## 2. OPTIMAL label redesigned — no more green frame
 
-- Old: Pull Hook 43%, Draw ~5%
-- New: Pull Hook 29%, Draw 33% (these were always draws, just mislabelled)
+The bracket-style frame from PR 4.8 was interfering visually with the
+TYPICAL value label sitting next to it. Stripped the frame; "OPTIMAL"
+now sits as a tight green word centred over the green zone, snug against
+the top of the bar. Label row dropped from 38px back to 32px so the
+chart reads more compactly.
 
-Plus your remaining 29% in Pull Hook is genuinely severe — face-to-path
-values from −5° to −15°. Honest labelling: you really are producing
-severe closed-face deliveries that often on your 7i.
+## 3. Click-to-drill on the Shape view
 
-## 6. Filter ALL · single-click focuses, cmd-click toggles
+The verification tool. Three places now respond to clicks:
 
-Old behaviour: clicking a club chip toggled it in/out of the selection.
-To focus on just one club, you had to deselect every other chip
-individually — painful with 10+ clubs loaded.
+- **9-ball matrix cells** — click any cell with shots in it. A drill
+  panel appears below showing the actual shots that mapped to that cell,
+  with per-shot face / path / F-to-P and the granular classification
+  name (e.g. "Pull Slight Draw" vs "Pull Hook"). The selected cell gets
+  a green border + soft green tint + outer glow so the source of the
+  drill data is obvious. Click again to clear, or hit the CLEAR button.
 
-New behaviour matches every list-selection UI (file managers,
-spreadsheets, design tools):
+- **Face-vs-Path scatter dots** — click any dot to see that specific
+  shot. The selected dot grows from r=5 to r=8 with a strong outline.
+  Useful for the "what was that outlier?" question.
 
-- **Plain click on a chip** → focus on ONLY this club (replaces selection)
-- **Cmd-click / Ctrl-click on a chip** → toggle in/out of current selection
-- **Click ALL** → select everything (unchanged)
-- **Click the only-active chip again** → reset to ALL (escape hatch)
+- **CLEAR button** — explicit affordance on the drill panel to clear the
+  selection.
 
-Tooltip on each chip: "Click to focus on just this club · Cmd/Ctrl-click
-to add to selection".
+The drill panel table columns are kept tight: when, club, face, path,
+F-to-P, and the granular classification name. The granular name is
+deliberately redundant with the cell label — it lets you see which
+fine-grained sub-shape mapped to the displayed cell. So clicking "Draw"
+might show you a mix of "Slight Draw", "Draw", "Hook", and "Pull Draw"
+— all of which legitimately bucket to "Draw" under the new rules.
 
-## 7. Shots · clearer club chip edit affordance
+The drill state is **local to the Shape view** — switching to another
+view doesn't carry it along. The drill is for exploring, not for
+narrowing the rest of the app.
 
-The club chip on each shot row had a subtle hover-only colour. New
-treatment:
+## Why this matters
 
-- ✎ pencil icon next to the club label, faint by default, fully visible
-  on hover
-- Border intensifies on hover to clearly signal interactivity
-- Tooltip mentions tagging convention: "Click to relabel · type a tag
-  like '7i [Mizuno]' for testing variants"
+Your specific feedback was that the Pull Hook count didn't match your
+known delivery (path +2° I-O, face-to-path −2°, "almost a perfect draw").
+With (a) the bucketing fix making the numbers more honest, and (b) the
+ability to click a cell and see exactly which shots are in it, you can
+verify any future surprises yourself instead of trusting (or fighting)
+the aggregate count.
 
-The tooltip primes the future per-shot tagging workflow we discussed —
-users will see the convention without needing a separate UI.
+This is also the diagnostic tool for the bucketing logic itself. If you
+disagree with a call ("that shouldn't be in Draw, it's a clear hook"),
+you can see exactly what the classifier did and we can decide whether
+the thresholds need another nudge.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/shape.js` | Threshold rebuild + bucket-mapping reflecting honest curve severity |
-| `src/views/DistanceView.jsx` | % · N column instead of raw N |
-| `src/views/StrikeView.jsx` | Centred-carry reference per club; carry-loss % display + recolouring; header text |
-| `src/views/FlightView.jsx` | OPTIMAL bracket moved above track; old in-bar label removed |
-| `src/views/ShapeView.jsx` | Cell content reordered: name → % → count |
-| `src/views/ShotsView.jsx` | Club chip uses new `.club-chip-edit` class with pencil icon |
-| `src/components/FilterBar.jsx` | New `clickClub` with focus + modifier behaviour |
-| `src/index.css` | New rules: `.gauge-optimal-marker`, `.club-chip-edit*`; updated `.shape-cell-*` hierarchy; taller `.gauge-label-row`; old `.gauge-window-label` removed |
+| `src/lib/shape.js` | Bucketing map: `Hook` → `Draw`, `Slice` → `Fade` (was incorrectly going to corners) |
+| `src/views/ShapeView.jsx` | New `DrillPanel` component; click handlers on cells + scatter dots; `useState` for `drillDown` selection; updated grid caption text |
+| `src/index.css` | New `.shape-cell.clickable` and `.shape-cell.selected` styles; OPTIMAL marker rewritten as flat label (no frame); label row height reduced |
 
-## Tested
+## Verified
 
-- Production build clean (~56KB JS / 18KB gzipped above PR 4.7's baseline)
-- Shape classifier verified against your actual 22-shot dataset — Pull
-  Hook count drops from 9 to 6, with remaining 6 confirmed as genuine
-  severe closed-face deliveries (face-to-path −5° to −15°)
-- Strike carry-vs-centred verified — produces the expected pattern
-  (0% / −1% / −10% / −25%) on your 7i
+- Production build clean
+- Sanity-tested on your 22-shot dataset — Pull Hook drops to 19%, Draw
+  rises to 43% (matching your reported typical delivery), and the
+  remaining Pull Hook shots all have face-to-path < -5°
+- Manual click flow tested mentally: select cell → see shots → click
+  another cell → swap; click same cell again → deselects; click scatter
+  dot → opens shot drill; CLEAR button works on both modes
 
 ## What's next
 
-Pending from the queue:
-- **PR 4.9** — Per-shot tagging via the club label (the `7i [Mizuno]`
-  workflow we discussed)
-- **PR 5** — Per-club swing fingerprint view (the original Shape upgrade)
-- **PR 6+** — User name on import, session tags, export/import,
-  MongoDB sync
+Same backlog as before — per-shot tagging via club label is the next
+natural fit, then per-club swing fingerprint, then user-name-on-import.

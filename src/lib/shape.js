@@ -99,14 +99,18 @@ export function bucketShape(name) {
     'Pull Fade':        'Fade',
     'Pull Slice':       'Pull Slice', // severe — stays in corner
 
-    // Straight start row — these have no Pull/Push start, the curve name owns it
-    'Hook':             'Pull Hook',  // hook with neutral start is still a hook
+    // Straight start row — the curve owns the bucket. A "Hook" here is a
+    // straight start with a severe draw curve; it belongs in the Draw cell
+    // (middle-left), NOT the corner Pull Hook cell. Same for Slice → Fade.
+    // The corner cells are sacred: they only hold "started off-target AND
+    // curved further off-target" shots.
+    'Hook':             'Draw',
     'Draw':             'Draw',
     'Slight Draw':      'Draw',
     'Straight':         'Straight',
     'Slight Fade':      'Fade',
     'Fade':             'Fade',
-    'Slice':            'Push Slice', // slice with neutral start ends up bottom-right
+    'Slice':            'Fade',
 
     // Push start row
     'Push Hook':        'Push Draw',  // closed delivery on a pushed shot — fold to Push Draw

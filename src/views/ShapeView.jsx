@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { clubColor, orderedClubs } from '../lib/clubs';
 import { mean } from '../lib/stats';
 import { classifyShape, bucketShape, SHAPE_BUCKETS, formatPath } from '../lib/shape';
@@ -6,10 +7,14 @@ import { classifyShape, bucketShape, SHAPE_BUCKETS, formatPath } from '../lib/sh
  * Shape & delivery view: face direction, club path, and the gap between them.
  *
  * Four sections:
- *   1. 9-ball-flight matrix (counts of each shape bucket)
+ *   1. 9-ball-flight matrix — click any cell to inspect the shots in it
  *   2. Face & path averages by club
- *   3. Face-vs-Path scatter (diagonal = straight ball; above = fade, below = draw)
+ *   3. Face-vs-Path scatter — click any dot to see that exact shot
  *   4. Start line vs side spin scatter
+ *
+ * The drill-down state lets the user verify the classification. "Click a
+ * cell that surprises you and see the actual shots" is the diagnostic
+ * workflow when the bucket counts don't match the user's mental model.
  */
 export default function ShapeView({ shots, rightHanded }) {
   const validShots = shots.filter((s) => s.faceToTarget != null && s.clubPath != null);
@@ -17,6 +22,10 @@ export default function ShapeView({ shots, rightHanded }) {
     ...s,
     shape: classifyShape(s.faceToTarget, s.clubPath, rightHanded),
   }));
+
+  // Drill-down selection. Shape: { kind: 'cell', cell: 'Pull Hook' } or
+  // { kind: 'shot', id: '...' } or null.
+  const [drillDown, setDrillDown] = useState(null);
 
   const grid = SHAPE_BUCKETS.map((row) =>
     row.map((name) => ({
@@ -26,6 +35,20 @@ export default function ShapeView({ shots, rightHanded }) {
   );
   const total = shapes.length;
   const maxCount = Math.max(...grid.flat().map((c) => c.shots.length));
+
+  // Resolve drill-down selection to a concrete list of shots, with a label.
+  const drillShots =
+    drillDown?.kind === 'cell'
+      ? shapes.filter((s) => bucketShape(s.shape.name) === drillDown.cell)
+      : drillDown?.kind === 'shot'
+      ? shapes.filter((s) => s.id === drillDown.id)
+      : null;
+  const drillLabel =
+    drillDown?.kind === 'cell'
+      ? `${drillDown.cell} — ${drillShots.length} shot${drillShots.length === 1 ? '' : 's'}`
+      : drillDown?.kind === 'shot'
+      ? 'Selected shot'
+      : null;
 
   return (
     <>
@@ -52,11 +75,21 @@ export default function ShapeView({ shots, rightHanded }) {
               const pct = total ? (cell.shots.length / total) * 100 : 0;
               const intensity = maxCount ? cell.shots.length / maxCount : 0;
               const dominant = cell.shots.length === maxCount && maxCount > 0;
+              const isSelected = drillDown?.kind === 'cell' && drillDown.cell === cell.name;
+              const clickable = cell.shots.length > 0;
               return (
                 <div
                   key={i}
-                  className={`shape-cell ${cell.shots.length > 0 ? 'has-shots' : ''} ${dominant ? 'dominant' : ''}`}
+                  className={`shape-cell ${cell.shots.length > 0 ? 'has-shots' : ''} ${dominant ? 'dominant' : ''} ${isSelected ? 'selected' : ''} ${clickable ? 'clickable' : ''}`}
                   style={dominant ? {} : { backgroundColor: `rgba(74, 222, 128, ${intensity * 0.08})` }}
+                  onClick={() => {
+                    if (!clickable) return;
+                    setDrillDown(
+                      isSelected ? null : { kind: 'cell', cell: cell.name }
+                    );
+                  }}
+                  role={clickable ? 'button' : undefined}
+                  title={clickable ? `Click to see the ${cell.shots.length} shot${cell.shots.length === 1 ? '' : 's'} in this cell` : ''}
                 >
                   <div className="shape-cell-name">{cell.name}</div>
                   <div className="shape-cell-pct">{pct.toFixed(0)}%</div>
@@ -76,8 +109,15 @@ export default function ShapeView({ shots, rightHanded }) {
               textAlign: 'center',
             }}
           >
-            ROWS: START DIRECTION (PULL · STRAIGHT · PUSH) — COLS: CURVE (DRAW · STRAIGHT · FADE)
+            ROWS: START DIRECTION (PULL · STRAIGHT · PUSH) — COLS: CURVE (DRAW · STRAIGHT · FADE) · CLICK A CELL TO INSPECT
           </div>
+          {drillShots && (
+            <DrillPanel
+              label={drillLabel}
+              shots={drillShots}
+              onClear={() => setDrillDown(null)}
+            />
+          )}
         </div>
         <div className="card">
           <div className="card-header">
@@ -96,10 +136,23 @@ export default function ShapeView({ shots, rightHanded }) {
             <span className="num">03</span>Face vs Path scatter
           </div>
           <div className="card-subtitle">
-            The diagonal is "Face matches Path" — straight shots. Above = open face (fade). Below = closed face (draw).
+            The diagonal is "Face matches Path" — straight shots. Above = open face (fade). Below = closed face (draw). Click a dot to inspect.
           </div>
         </div>
-        <FacePathScatter shots={shapes} />
+        <FacePathScatter
+          shots={shapes}
+          selectedId={drillDown?.kind === 'shot' ? drillDown.id : null}
+          onSelectShot={(id) => setDrillDown(
+            drillDown?.kind === 'shot' && drillDown.id === id ? null : { kind: 'shot', id }
+          )}
+        />
+        {drillDown?.kind === 'shot' && drillShots && (
+          <DrillPanel
+            label={drillLabel}
+            shots={drillShots}
+            onClear={() => setDrillDown(null)}
+          />
+        )}
       </div>
 
       <div className="card">
@@ -161,7 +214,7 @@ function FaceAndPathTable({ shots }) {
   );
 }
 
-function FacePathScatter({ shots }) {
+function FacePathScatter({ shots, selectedId, onSelectShot }) {
   const W = 760;
   const H = 460;
   const PAD = 50;
@@ -224,23 +277,28 @@ function FacePathScatter({ shots }) {
           FACE TO TARGET (deg)
         </text>
 
-        {shots.map((s, i) => (
-          <circle
-            key={i}
-            cx={xToPx(s.clubPath)}
-            cy={yToPx(s.faceToTarget)}
-            r="5"
-            fill={clubColor(s.club)}
-            fillOpacity="0.7"
-            stroke="rgba(0,0,0,0.3)"
-            strokeWidth="0.5"
-          >
-            <title>
-              {s.club} · Face {s.faceToTarget.toFixed(1)}° · Path {formatPath(s.clubPath)} · F-to-P{' '}
-              {s.shape.faceToPath.toFixed(1)}° · {s.shape.name}
-            </title>
-          </circle>
-        ))}
+        {shots.map((s, i) => {
+          const isSelected = selectedId === s.id;
+          return (
+            <circle
+              key={s.id || i}
+              cx={xToPx(s.clubPath)}
+              cy={yToPx(s.faceToTarget)}
+              r={isSelected ? '8' : '5'}
+              fill={clubColor(s.club)}
+              fillOpacity={isSelected ? '1' : '0.7'}
+              stroke={isSelected ? 'var(--text-strong)' : 'rgba(0,0,0,0.3)'}
+              strokeWidth={isSelected ? '2' : '0.5'}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onSelectShot?.(s.id)}
+            >
+              <title>
+                {s.club} · Face {s.faceToTarget.toFixed(1)}° · Path {formatPath(s.clubPath)} · F-to-P{' '}
+                {s.shape.faceToPath.toFixed(1)}° · {s.shape.name}
+              </title>
+            </circle>
+          );
+        })}
       </svg>
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12, gap: 16 }}>
         {orderedClubs([...new Set(shots.map((s) => s.club))]).map((c) => (
@@ -322,6 +380,94 @@ function StartCurveScatter({ shots, rightHanded }) {
           </circle>
         ))}
       </svg>
+    </div>
+  );
+}
+
+/**
+ * Drill-down panel: a small table of shots and their per-shot face / path /
+ * face-to-path values. Used to verify classification calls — click a cell or
+ * dot that surprises you, see exactly which shots are in it, and judge
+ * whether the call is honest. This is the verification tool for the
+ * bucketing logic itself.
+ *
+ * Columns kept deliberately tight: when, club, face, path, F-to-P, granular
+ * shape name (the underlying classification before bucketing). The "shape"
+ * column is intentionally redundant with the cell label; it lets you see
+ * which granular sub-shape mapped to the cell.
+ */
+function DrillPanel({ label, shots, onClear }) {
+  return (
+    <div
+      style={{
+        marginTop: 18,
+        padding: 14,
+        background: 'var(--bg-elev-2)',
+        border: '1px solid var(--border-strong)',
+        borderLeft: '3px solid var(--green)',
+        borderRadius: 4,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, color: 'var(--text-strong)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          {label}
+        </div>
+        <button
+          className="btn-secondary"
+          onClick={onClear}
+          style={{ padding: '3px 10px', fontSize: 10 }}
+        >
+          CLEAR
+        </button>
+      </div>
+      {shots.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>No shots in this selection.</div>
+      ) : (
+        <table className="data-table" style={{ fontSize: 11 }}>
+          <thead>
+            <tr>
+              <th>WHEN</th>
+              <th>CLUB</th>
+              <th className="num">FACE</th>
+              <th className="num">PATH</th>
+              <th className="num">F-TO-P</th>
+              <th>CLASSIFICATION</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shots
+              .slice()
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+              .map((s) => (
+                <tr key={s.id}>
+                  <td style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+                    {s.createdAt
+                      ? new Date(s.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                      : '—'}
+                  </td>
+                  <td style={{ color: clubColor(s.club), fontWeight: 700 }}>{s.club}</td>
+                  <td className="num">
+                    {s.faceToTarget > 0 ? '+' : ''}{s.faceToTarget.toFixed(1)}°
+                  </td>
+                  <td className="num">{formatPath(s.clubPath)}</td>
+                  <td
+                    className="num"
+                    style={{
+                      color:
+                        s.shape.faceToPath > 2 ? 'var(--amber)'
+                        : s.shape.faceToPath < -2 ? 'var(--blue)'
+                        : 'var(--green)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {s.shape.faceToPath > 0 ? '+' : ''}{s.shape.faceToPath.toFixed(1)}°
+                  </td>
+                  <td style={{ fontSize: 10, color: 'var(--text-dim)' }}>{s.shape.name}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
