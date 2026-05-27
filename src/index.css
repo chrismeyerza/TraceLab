@@ -664,12 +664,12 @@
     letter-spacing: 0.08em;
   }
 
-  /* Anchored typical-shot label row sits above the track. Also hosts the
-     OPTIMAL bracket marker which spans the green-zone position above the
-     bar. Tall enough to fit both stacked elements. */
+  /* Anchored typical-shot label row sits above the track. Holds two stacked
+     elements: the TYPICAL value/marker on top, and the OPTIMAL tag tight to
+     the green zone at the bottom of the row. */
   .gauge-label-row {
     position: relative;
-    height: 38px;
+    height: 32px;
     margin-bottom: 2px;
   }
   .gauge-typical-label {
@@ -714,23 +714,19 @@
     border-right: 1.5px solid rgba(74, 222, 128, 0.9);
     box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.15);
   }
-  /* The OPTIMAL marker is now an above-track bracket. Spans the green-zone
-     width with a centred label. Sits in the label row alongside the typical
-     value — placed by absolute positioning, so the typical label and the
-     optimal label can overlap visually with z-stacking handled by source order. */
+  /* OPTIMAL marker: a tight label sitting just above the green zone, no
+     frame. Width matches the green zone so it visually anchors the label
+     over its range; the label itself is centred. Sits low in the label row
+     so it's snug against the top of the track. */
   .gauge-optimal-marker {
     position: absolute;
-    top: 0;
-    height: 22px;
-    border-bottom: 2px solid rgba(74, 222, 128, 0.85);
-    border-left: 2px solid rgba(74, 222, 128, 0.85);
-    border-right: 2px solid rgba(74, 222, 128, 0.85);
-    border-radius: 0 0 4px 4px;
+    bottom: 0;
+    height: 14px;
     pointer-events: none;
   }
   .gauge-optimal-tag {
     position: absolute;
-    top: 1px;
+    bottom: 1px;
     left: 50%;
     transform: translateX(-50%);
     font-family: 'JetBrains Mono', monospace;
@@ -738,8 +734,6 @@
     font-weight: 700;
     color: rgba(74, 222, 128, 0.95);
     letter-spacing: 0.18em;
-    background: var(--bg-elev-1);
-    padding: 0 6px;
     white-space: nowrap;
   }
   .gauge-acceptable-edge {
@@ -866,9 +860,24 @@
     letter-spacing: 0.04em;
   }
   .shape-cell.has-shots { border-color: var(--border-strong); }
+  .shape-cell.clickable { cursor: pointer; transition: all 0.12s; }
+  .shape-cell.clickable:hover {
+    border-color: var(--green);
+    transform: translateY(-1px);
+  }
   .shape-cell.dominant { border-color: var(--green); background: rgba(74,222,128,0.05); }
   .shape-cell.dominant .shape-cell-name { color: var(--green); }
   .shape-cell.dominant .shape-cell-pct { color: var(--green); }
+  /* Selected: the cell that's currently driving the drill-down panel.
+     Distinct from .dominant: dominant is "biggest", selected is "user picked
+     this to inspect". They can co-occur; both styles compose. */
+  .shape-cell.selected {
+    border-color: var(--green);
+    background: rgba(74,222,128,0.18);
+    box-shadow: 0 0 0 2px var(--green);
+  }
+  .shape-cell.selected .shape-cell-name,
+  .shape-cell.selected .shape-cell-pct { color: var(--green); }
 
   /* Editable club chip in Shots view. The pencil icon is faintly visible by
      default and gets brighter on hover — signals interactivity without being
