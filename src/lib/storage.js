@@ -117,6 +117,90 @@ export async function addShots(shots) {
   });
 }
 
+/**
+ * Export the entire shot store as a portable JSON file. Format:
+ *
+ *   {
+ *     tracelab: { version: 1, exportedAt: "...", shotCount: N },
+ *     shots: [ {...}, ... ]
+ *   }
+ *
+ * The `tracelab` envelope lets us recognise our own files at import time and
+ * supports future schema migrations. We strip the IndexedDB-assigned `id`
+ * field on export so re-import gets fresh auto-incremented IDs (which is what
+ * we want — IDs are local to a DB instance, they shouldn't pin across machines).
+ *
+ * Returns a Blob ready to be saved via the browser's download mechanism.
+ */
+export async function exportAllShotsAsJson() {
+  const shots = await getAllShots();
+  // Strip per-DB autoincrement `id`; receiving DB will mint fresh ones.
+  const payload = {
+    tracelab: {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      shotCount: shots.length,
+    },
+    shots: shots.map(({ id, ...rest }) => rest),
+  };
+  const json = JSON.stringify(payload, null, 2);
+  return new Blob([json], { type: 'application/json' });
+}
+
+/**
+ * Auto-generated filename for an export: tracelab-export-YYYYMMDD-HHMM.tracelab.json
+ * Lets the user tell at a glance when the file was made and that it's ours.
+ */
+export function makeExportFilename() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `tracelab-export-${stamp}.tracelab.json`;
+}
+
+/**
+ * Validate and import a JSON payload produced by exportAllShotsAsJson.
+ * Returns { added, skipped, total } on success.
+ *
+ * Dedupe semantics: identical to addShots() — skips any incoming shot whose
+ * dedup key already exists locally. So importing a file containing shots you
+ * already have is a no-op for those shots; you never lose local edits (e.g.
+ * club relabels) to existing data.
+ *
+ * Throws on:
+ *   - JSON parse failure
+ *   - Missing/wrong envelope (not a TraceLab export)
+ *   - Unknown schema version (forward-compat guard)
+ *   - Non-array `shots` field
+ */
+export async function importShotsFromJson(jsonText) {
+  let payload;
+  try {
+    payload = JSON.parse(jsonText);
+  } catch (e) {
+    throw new Error('Not valid JSON — is this really a TraceLab export?');
+  }
+  if (!payload || typeof payload !== 'object' || !payload.tracelab) {
+    throw new Error('Missing TraceLab envelope. This file does not look like a TraceLab export.');
+  }
+  if (payload.tracelab.version !== 1) {
+    throw new Error(`Unknown export schema version: ${payload.tracelab.version}. This build understands version 1.`);
+  }
+  if (!Array.isArray(payload.shots)) {
+    throw new Error('Invalid file: shots field is missing or not an array.');
+  }
+  const total = payload.shots.length;
+  if (total === 0) {
+    return { added: 0, skipped: 0, total: 0 };
+  }
+  // Strip any id field present in the file (shouldn't be — we strip on
+  // export — but belt and braces; an old file or hand-edited one might
+  // include it, and addShots would honour it which we don't want).
+  const sanitised = payload.shots.map(({ id, ...rest }) => rest);
+  const { added, skipped } = await addShots(sanitised);
+  return { added, skipped, total };
+}
+
 export async function clearAllShots() {
   const db = await openDB();
   return new Promise((resolve, reject) => {

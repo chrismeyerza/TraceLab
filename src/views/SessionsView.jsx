@@ -4,9 +4,18 @@ import { clubColor } from '../lib/clubs';
 /**
  * Sessions view: drop new exports, browse history, delete individual sessions
  * or wipe everything. Sessions are ordered newest-first.
+ *
+ * Also home for backup/restore — Export writes a JSON file containing every
+ * shot, Restore reads one back in and merges. Both live in the Data
+ * management card, distinct from the regular file-drop above.
  */
-export default function SessionsView({ sessions, onFile, importStatus, onDeleteSession, onClearAll, onPinSession }) {
+export default function SessionsView({
+  sessions, onFile, importStatus,
+  onDeleteSession, onClearAll, onPinSession,
+  onExport, onBackupImport, shotCount,
+}) {
   const fileRef = useRef();
+  const backupFileRef = useRef();
   const [dragging, setDragging] = useState(false);
   const totalShots = sessions.reduce((a, s) => a + s.count, 0);
 
@@ -53,13 +62,64 @@ export default function SessionsView({ sessions, onFile, importStatus, onDeleteS
           <div className="card-header">
             <div className="card-title">Data management</div>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 14 }}>
-            All shots are stored locally in your browser. They never leave your device. Delete individual sessions or
-            wipe everything below.
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 16 }}>
+            Your shots are stored locally in your browser. They never leave your device unless you export them.
           </div>
-          <button className="btn-danger" onClick={onClearAll}>
-            Clear all data
-          </button>
+
+          {/* Backup / Restore subsection — separate from CSV/XLSX import above */}
+          <div style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                fontFamily: 'JetBrains Mono', fontSize: 10, fontWeight: 700,
+                color: 'var(--text-dim)', letterSpacing: '0.14em',
+                textTransform: 'uppercase', marginBottom: 8,
+              }}
+            >
+              Backup &amp; restore
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5, marginBottom: 10 }}>
+              Save a JSON snapshot of every shot, or restore one you took earlier (or on another machine). Duplicates are skipped automatically — your local edits are never overwritten.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="btn-secondary"
+                onClick={onExport}
+                disabled={shotCount === 0}
+                title={shotCount === 0 ? 'No shots to export yet' : `Export all ${shotCount} shots as a JSON file`}
+              >
+                Export backup
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => backupFileRef.current?.click()}
+                title="Restore a TraceLab JSON backup"
+              >
+                Restore backup
+              </button>
+              <input
+                ref={backupFileRef}
+                type="file"
+                accept=".json,.tracelab.json,application/json"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  if (e.target.files[0]) onBackupImport(e.target.files[0]);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Destructive action sits separately below, with a divider */}
+          <div
+            style={{
+              paddingTop: 14,
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <button className="btn-danger" onClick={onClearAll}>
+              Clear all data
+            </button>
+          </div>
         </div>
       </div>
 
