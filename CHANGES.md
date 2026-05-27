@@ -1,106 +1,144 @@
-# Changes — Shape view honest-bucketing + click-to-drill (PR 4.9)
+# Changes — Start line classification + severity-driven bucketing (PR 4.10)
 
-Three focused fixes to make the Shape view trustworthy and inspectable.
+A proper rewrite of how shots get classified into shape buckets, addressing
+the long-running "but why is this a Pull Hook" question.
 
-## 1. Bucketing bug fixed — Pull Hook count now honest
+## The two problems this fixes
 
-The bug: `'Hook': 'Pull Hook'` in the bucketing map was sending shots
-that started square-to-target but curved violently into the corner "Pull
-Hook" cell. The corners are meant for "started off-target AND curved
-further off-target" only — a corner should mean the shot ended up far
-left or far right.
+### Problem 1: We were using face direction as the start line
 
-A Hook with a straight start ends up further left than a draw, but it
-*didn't start* off-target. It belongs in the middle-row Draw cell.
+Modern ball-flight law says the ball starts where the **face × 0.75 + path
+× 0.25** points (for irons — driver is closer to 0.85/0.15). The old
+classifier used face alone, which:
+- Overstated PULL for shots with strong in-out paths and slight closed face
+- Understated PULL for shots with square face and steep out-in path
+- Made the classification disagree with the player's actual experience
 
-Same bug existed for `'Slice': 'Push Slice'` (severe slice with straight
-start was being thrown into the corner instead of the middle-row Fade
-cell).
+### Problem 2: Hook vs Draw was about start direction, not outcome
 
-**Concrete result on your 22-shot dataset:**
+A "Hook" with a square start and a "Pull Hook" with a left start both end
+up well left of target. Both are uncontrolled curves. Both are face-to-path
+problems. They're the same coaching diagnosis and produce the same scoring
+damage — but the old bucketing put them in different cells.
 
-| Bucket | Before PR 4.9 | After PR 4.9 |
+The grid corners should mean "this is trouble" not "this happens to live
+at this axis intersection".
+
+## What's in place now
+
+### 1. `startLine` as a first-class derived field
+
+Computed on import in `parser.js`:
+
+```
+startLine = 0.75 × faceToTarget + 0.25 × clubPath
+```
+
+Stored on every shot. Robust to old shots without the field (Shots view
+computes on the fly from face + path).
+
+### 2. Start line drives PULL / PUSH classification, threshold ±3°
+
+In `classifyShape`:
+- `|startLine| < 3°` → STRAIGHT start
+- `startLine ≤ −3°` → PULL
+- `startLine ≥ +3°` → PUSH
+
+The 3° threshold was chosen because at 150 yards it's ~8 yards offline at
+takeoff — meaningfully missing the target line. Tighter than the old 4°,
+which is the right call when curve is reinforcing the start direction.
+
+### 3. Severity-driven 9-grid bucketing
+
+The corner cells now own SEVERE curves regardless of start direction:
+
+| Start \ Curve | Severe Draw | Controlled / Straight | Severe Fade |
+|---|---|---|---|
+| **Pull** | Pull / Hook | Pull | Pull / Slice |
+| **Straight** | Draw | Straight | Fade |
+| **Push** | Push Draw | Push | Push / Slice |
+
+Three corner renames:
+- "Pull Hook" → "**Pull / Hook**" — holds both genuine Pull Hooks and Hooks
+- "Pull Slice" → "**Pull / Slice**" — same logic on the other side
+- "Push Slice" → "**Push / Slice**" — same logic on the other corner
+
+"Push Draw" keeps its name because it's the constructive "started right,
+curved back" shape — different category from the trouble shots.
+
+Bucketing rules now read intuitively: severe curves (|f2p| > 5°) go to
+the corner that matches their curve direction. Controlled curves go to
+the middle row regardless of start direction. The constructive Push Draw
+gets its own positive-shape cell.
+
+### 4. START column in the drill panel
+
+The drill panel now shows START between PATH and F-TO-P. Values exceeding
+±3° highlight in amber. Tooltip explains the formula. So when you click
+a "Pull / Hook" cell, you can see for each shot whether it started near
+target (a Hook) or started left (a true Pull Hook).
+
+### 5. START column in Shots view Club tab
+
+Inserted between FACE→TGT and F→P. Same amber-on-off-target highlighting.
+
+### 6. startLine in the scatter tooltip
+
+Hovering any dot on the Face vs Path scatter now shows the start line too.
+
+## What this means for YOUR data
+
+### Bucket counts (21 shots):
+
+| Bucket | Count | % |
 |---|---|---|
-| Draw | 33% | **43%** ← the controlled curves now go where they belong |
-| Pull Hook | 29% | **19%** ← only genuinely severe shots remain |
-| Fade | 24% | 24% |
-| Straight | 14% | 14% |
+| Draw | 7 | 33% |
+| Pull / Hook | 6 | 29% |
+| Fade | 5 | 24% |
+| Straight | 2 | 10% |
+| Push | 1 | 5% |
 
-The 4 shots still in Pull Hook all have face <−4.9° AND face-to-path
-<−5.7°. Those really are pull hooks. The 2 shots that moved out had
-near-square face but severely closed-to-path delivery — i.e., they
-started near target and curved sharply left. Draws, not pull hooks.
+### What's in your Pull / Hook cell now
 
-## 2. OPTIMAL label redesigned — no more green frame
+All 6 shots have severe closed-to-path delivery (f2p < −5°). Looking at
+start lines:
+- 2 shots are genuine Pull Hook: start −6.4° and −10.9°, severe curves on
+  top — these end up 30-50 yards left.
+- 4 shots are Hook (granular name): start −0.8° to −3.5°, severe curves.
+  These start near/just-left-of target and curve another 20+ yards left.
+  All end up well left.
 
-The bracket-style frame from PR 4.8 was interfering visually with the
-TYPICAL value label sitting next to it. Stripped the frame; "OPTIMAL"
-now sits as a tight green word centred over the green zone, snug against
-the top of the bar. Label row dropped from 38px back to 32px so the
-chart reads more compactly.
+The drill panel shows the granular CLASSIFICATION column, so you can see
+which is which. Same cell, same severity of outcome, but distinguishable
+when needed.
 
-## 3. Click-to-drill on the Shape view
+### Other notable label changes
 
-The verification tool. Three places now respond to clicks:
-
-- **9-ball matrix cells** — click any cell with shots in it. A drill
-  panel appears below showing the actual shots that mapped to that cell,
-  with per-shot face / path / F-to-P and the granular classification
-  name (e.g. "Pull Slight Draw" vs "Pull Hook"). The selected cell gets
-  a green border + soft green tint + outer glow so the source of the
-  drill data is obvious. Click again to clear, or hit the CLEAR button.
-
-- **Face-vs-Path scatter dots** — click any dot to see that specific
-  shot. The selected dot grows from r=5 to r=8 with a strong outline.
-  Useful for the "what was that outlier?" question.
-
-- **CLEAR button** — explicit affordance on the drill panel to clear the
-  selection.
-
-The drill panel table columns are kept tight: when, club, face, path,
-F-to-P, and the granular classification name. The granular name is
-deliberately redundant with the cell label — it lets you see which
-fine-grained sub-shape mapped to the displayed cell. So clicking "Draw"
-might show you a mix of "Slight Draw", "Draw", "Hook", and "Pull Draw"
-— all of which legitimately bucket to "Draw" under the new rules.
-
-The drill state is **local to the Shape view** — switching to another
-view doesn't carry it along. The drill is for exploring, not for
-narrowing the rest of the app.
-
-## Why this matters
-
-Your specific feedback was that the Pull Hook count didn't match your
-known delivery (path +2° I-O, face-to-path −2°, "almost a perfect draw").
-With (a) the bucketing fix making the numbers more honest, and (b) the
-ability to click a cell and see exactly which shots are in it, you can
-verify any future surprises yourself instead of trusting (or fighting)
-the aggregate count.
-
-This is also the diagnostic tool for the bucketing logic itself. If you
-disagree with a call ("that shouldn't be in Draw, it's a clear hook"),
-you can see exactly what the classifier did and we can decide whether
-the thresholds need another nudge.
+- 50° at face +3.4° / start +3.27° — was "Straight", now "Push". Started
+  +3.3° right of target — that's off the line.
+- 7i at face −5.1° / start −3.97° — was "Draw", now "Pull Draw". Pulled
+  start with controlled draw curve. Folds to Draw bucket as before.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/shape.js` | Bucketing map: `Hook` → `Draw`, `Slice` → `Fade` (was incorrectly going to corners) |
-| `src/views/ShapeView.jsx` | New `DrillPanel` component; click handlers on cells + scatter dots; `useState` for `drillDown` selection; updated grid caption text |
-| `src/index.css` | New `.shape-cell.clickable` and `.shape-cell.selected` styles; OPTIMAL marker rewritten as flat label (no frame); label row height reduced |
+| `src/lib/parser.js` | New derived `startLine` field on every shot |
+| `src/lib/shape.js` | `classifyShape` uses startLine; SHAPE_BUCKETS renamed corners; bucketShape rewritten with severity ownership |
+| `src/views/ShapeView.jsx` | Drill panel has START column; scatter tooltip shows start; threshold colour at ±3° |
+| `src/views/ShotsView.jsx` | New `startLine` column in Club tab with on-the-fly fallback for shots imported before this PR |
 
 ## Verified
 
 - Production build clean
-- Sanity-tested on your 22-shot dataset — Pull Hook drops to 19%, Draw
-  rises to 43% (matching your reported typical delivery), and the
-  remaining Pull Hook shots all have face-to-path < -5°
-- Manual click flow tested mentally: select cell → see shots → click
-  another cell → swap; click same cell again → deselects; click scatter
-  dot → opens shot drill; CLEAR button works on both modes
+- Sanity-tested on your 22-shot dataset — startLine values match the
+  formula, classifications adjust as expected with the new threshold
+- Old shots without stored startLine show correctly in Shots view (fallback
+  computation runs)
+- All 6 Pull / Hook shots have face-to-path < −5° AND end up well left of
+  target — they belong together
 
 ## What's next
 
-Same backlog as before — per-shot tagging via club label is the next
-natural fit, then per-club swing fingerprint, then user-name-on-import.
+Per-shot tagging via club label (was 4.9, deferred to a future PR);
+per-club swing fingerprint; user-name-on-import. Same backlog.

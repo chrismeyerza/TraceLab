@@ -271,6 +271,25 @@ export function parseForesightFile(input, fileName) {
         shot.faceToPath = null;
       }
 
+      // Start Line: estimated initial direction of ball flight, in degrees
+      // relative to target. Uses the modern ball-flight law approximation:
+      //   startLine = 0.75 × face + 0.25 × path
+      //
+      // The ball doesn't start exactly where the face points — path drags it
+      // slightly in the path direction. Foresight and TrackMan both use a
+      // ~75/25 split for irons; driver is closer to 85/15 because the ball
+      // spends longer in contact and the face owns more of the start. We use
+      // 75/25 across all clubs for now — could refine per-club later.
+      //
+      // This is the value used for PULL / PUSH classification in shape.js,
+      // because it's the physically correct "where did the ball start" not
+      // "where did the face point" (which ignores path's contribution).
+      if (shot.faceToTarget != null && shot.clubPath != null) {
+        shot.startLine = 0.75 * shot.faceToTarget + 0.25 * shot.clubPath;
+      } else {
+        shot.startLine = null;
+      }
+
       // Spin Loft: positive = spin-generating geometry. Spin loft of zero
       // produces no spin (a knuckleball); typical values: driver 10-15°,
       // mid-iron 20-25°, wedges 35-50°.

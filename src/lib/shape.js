@@ -2,39 +2,46 @@
  * Classify a shot's start direction and curve from Face-to-Target and Club Path.
  *
  * In modern ball-flight terms:
- *   - The ball starts ~75-85% where the face points (Face to Target)
+ *   - The ball starts where face × 0.75 + path × 0.25 points (start line)
  *   - The ball curves based on Face-to-Path (Face to Target − Club Path)
  *
  * For a right-handed golfer:
- *   - Face open  (>0) = starts right (PUSH)
- *   - Face closed (<0) = starts left (PULL)
+ *   - Start line > 0 = starts right (PUSH)
+ *   - Start line < 0 = starts left (PULL)
  *   - Face-to-Path > 0 = face open relative to path = fade/slice
  *   - Face-to-Path < 0 = face closed relative to path = draw/hook
  *
  * Left-handed: signs flip.
  *
- * Threshold philosophy (revised in v1.5):
- *   - A 1.5° face delivery is essentially square; not a real "Pull/Push"
- *   - A 0.5° face-to-path is barely a draw; not a real "Draw" bucket
- *   - A "Hook" is a 25+ yard violent curve; not a controlled draw
- *   - A "Slice" is a 25+ yard violent curve; not a controlled fade
- * So PUSH/PULL kicks in at 4°+ off-square, DRAW at 2°+ closed-to-path,
- * HOOK only at 5°+ closed-to-path. Numbers calibrated to observable shot
- * shape, not statistical sensitivity.
+ * Threshold philosophy (revised in v1.6):
+ *   - Start line is what physically determines where the ball goes (75% face
+ *     + 25% path), not face direction alone. A square face with a 6° in-out
+ *     path doesn't start straight — it starts 1.5° right.
+ *   - PULL / PUSH kicks in at ±3° start line. At 150 yards that's about
+ *     8 yards offline at takeoff — meaningfully off the target line. Tighter
+ *     than 4° is the right call when the curve is reinforcing the start
+ *     direction (a -3.5° start with closed face will end 25+ yards left,
+ *     which is the textbook Pull Hook).
+ *   - A "Hook" is a 25+ yard violent curve to the left; not a controlled draw.
+ *   - Critically: severity owns the corner. A Hook with a straight start
+ *     and a Pull Hook with a left start BOTH bucket to the corner — they
+ *     end up in the same place on the course and produce the same kind of
+ *     trouble. The drill panel preserves the distinction at the per-shot
+ *     level when needed.
  */
 export function classifyShape(faceToTarget, clubPath, rightHanded = true) {
   const factor = rightHanded ? 1 : -1;
   const face = faceToTarget * factor;
   const path = clubPath * factor;
   const faceToPath = face - path;
+  const startLine = 0.75 * face + 0.25 * path;
 
   let start = 'STRAIGHT';
-  if (face > 4) start = 'PUSH';
-  else if (face < -4) start = 'PULL';
+  if (startLine > 3) start = 'PUSH';
+  else if (startLine < -3) start = 'PULL';
 
   // Curve buckets. Negative face-to-path = draw/hook side; positive = fade/slice.
-  // The bands are tighter near zero and only blow out into "HOOK" / "SLICE" at
-  // large absolute values — matching what actually looks like one on course.
+  // Tight near zero; only blows out to HOOK / SLICE at large absolute values.
   let curve = 'STRAIGHT';
   if (faceToPath > 5) curve = 'SLICE';
   else if (faceToPath > 2) curve = 'FADE';
@@ -43,9 +50,9 @@ export function classifyShape(faceToTarget, clubPath, rightHanded = true) {
   else if (faceToPath < -2) curve = 'DRAW';
   else if (faceToPath < -0.7) curve = 'SLIGHT_DRAW';
 
-  // Names map start × curve → the granular shape names used in summary tables.
-  // Critically: a controlled draw stays a "Draw"; only a violent curve is a
-  // "Hook". Same for the fade/slice side.
+  // Granular name preserves both axes for the drill panel. A "Hook" with a
+  // straight start is distinct from a "Pull Hook" with a leftward start —
+  // they bucket to the same corner cell, but the underlying name distinguishes.
   const NAMES = {
     'PULL_HOOK': 'Pull Hook', 'PULL_DRAW': 'Pull Draw', 'PULL_SLIGHT_DRAW': 'Pull Slight Draw',
     'PULL_STRAIGHT': 'Pull',
@@ -58,68 +65,82 @@ export function classifyShape(faceToTarget, clubPath, rightHanded = true) {
     'PUSH_SLIGHT_FADE': 'Push Slight Fade', 'PUSH_FADE': 'Push Fade', 'PUSH_SLICE': 'Push Slice',
   };
   const name = NAMES[`${start}_${curve}`] || 'Straight';
-  return { start, curve, faceToPath, name };
+  return { start, curve, faceToPath, startLine, name };
 }
 
 /**
- * Classic 9-cell shot matrix. Rows = start direction, columns = curve.
+ * Classic 9-cell shot matrix with severity-driven corners.
  *
- * Important: corner cells = "started off-target AND severely curved further
- * off-target". A 1° controlled draw with a slightly closed face is NOT a
- * Pull Hook — it's just a Draw. The new (v1.5) bucketing reflects this:
- * Pull Hook only fills when both axes are severe. The middle row catches
- * "ball started near target" and the curve names there are accurate.
+ * The corner cells own SEVERE curves regardless of start direction. A Hook
+ * with a square start ends in roughly the same place as a Pull Hook (well
+ * left of target) — both are uncontrolled left-curving shots, both are the
+ * same coaching problem (face-to-path delivery). They share a cell, and the
+ * cell name reflects that: "Pull / Hook" rather than "Pull Hook".
  *
- * The bottom-left "Push Draw" cell is a special case — it represents the
- * "started right, curved back" shape that's actually common for strong
- * players, so it keeps its supportive name (not "Push Hook").
+ * Middle row holds CONTROLLED curves with near-target starts (the good shots).
+ * Bottom-left "Push Draw" is the special case — the constructive "started
+ * right, curved back" shape that deserves its own positive label.
  */
 export const SHAPE_BUCKETS = [
-  ['Pull Hook', 'Pull',    'Pull Slice'],
-  ['Draw',      'Straight', 'Fade'],
-  ['Push Draw', 'Push',    'Push Slice'],
+  ['Pull / Hook', 'Pull',    'Pull / Slice'],
+  ['Draw',         'Straight', 'Fade'],
+  ['Push Draw',   'Push',    'Push / Slice'],
 ];
 
 /**
  * Map a granular shape name down to its 9-grid bucket cell.
  *
- * Crucial change from v1.4: "Pull Draw" (started left, slight closed-to-path)
- * collapses to the "Draw" cell, NOT the "Pull Hook" cell. Previous bucketing
- * inflated the Pull Hook count with controlled draws. The 9-grid corner now
- * means what it says.
+ * Bucketing rules:
+ *   - Any shot with severe DRAW curve (HOOK) → "Pull / Hook" corner
+ *     regardless of start. Hook from straight start and Pull Hook from
+ *     left start both end up here. They both miss left, both are
+ *     face-to-path problems.
+ *   - Any shot with severe FADE curve (SLICE) → "Pull / Slice" or
+ *     "Push / Slice" corner depending on start.
+ *   - Controlled DRAW / FADE → middle-row cells regardless of start.
+ *   - "Push Draw" (push start + controlled draw curve) gets its own
+ *     cell because it's the constructive "started right, curved back"
+ *     shape that's actually GOOD — different from a generic Draw.
  */
 export function bucketShape(name) {
   const simplify = {
-    // Pull start row
-    'Pull Hook':        'Pull Hook',  // severe — stays in corner
-    'Pull Draw':        'Draw',       // controlled — folds to middle row
-    'Pull Slight Draw': 'Draw',
-    'Pull':             'Pull',
-    'Pull Slight Fade': 'Fade',       // controlled fade after pull → middle row
-    'Pull Fade':        'Fade',
-    'Pull Slice':       'Pull Slice', // severe — stays in corner
+    // Severe curves with leftward start — pull hook
+    'Pull Hook':        'Pull / Hook',
+    // Severe curves with straight start — still ends up well left
+    'Hook':             'Pull / Hook',
+    // Severe curves with push start (closed face on a pushed shot — rare,
+    // ends up left despite the push start — same trouble category)
+    'Push Hook':        'Pull / Hook',
 
-    // Straight start row — the curve owns the bucket. A "Hook" here is a
-    // straight start with a severe draw curve; it belongs in the Draw cell
-    // (middle-left), NOT the corner Pull Hook cell. Same for Slice → Fade.
-    // The corner cells are sacred: they only hold "started off-target AND
-    // curved further off-target" shots.
-    'Hook':             'Draw',
+    // Controlled draws (regardless of start direction) → middle row
+    'Pull Draw':        'Draw',
+    'Pull Slight Draw': 'Draw',
     'Draw':             'Draw',
     'Slight Draw':      'Draw',
+
+    // Push-start controlled draws are the GOOD shape — own cell
+    'Push Draw':        'Push Draw',
+    'Push Slight Draw': 'Push Draw',
+
+    // Straight-start straight
     'Straight':         'Straight',
+
+    // Pull-start straight (no curve), push-start straight — direct
+    'Pull':             'Pull',
+    'Push':             'Push',
+
+    // Controlled fades (regardless of start) → middle row
     'Slight Fade':      'Fade',
     'Fade':             'Fade',
-    'Slice':            'Fade',
-
-    // Push start row
-    'Push Hook':        'Push Draw',  // closed delivery on a pushed shot — fold to Push Draw
-    'Push Draw':        'Push Draw',  // the "good shot" cell stays itself
-    'Push Slight Draw': 'Push Draw',
-    'Push':             'Push',
+    'Pull Slight Fade': 'Fade',
+    'Pull Fade':        'Fade',
     'Push Slight Fade': 'Fade',
     'Push Fade':        'Fade',
-    'Push Slice':       'Push Slice',
+
+    // Severe curves (slices) with leftward / straight / push start
+    'Pull Slice':       'Pull / Slice',
+    'Slice':            'Push / Slice', // a slice from a square start ends up well right
+    'Push Slice':       'Push / Slice',
   };
   return simplify[name] || name;
 }

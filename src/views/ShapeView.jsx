@@ -293,7 +293,7 @@ function FacePathScatter({ shots, selectedId, onSelectShot }) {
               onClick={() => onSelectShot?.(s.id)}
             >
               <title>
-                {s.club} · Face {s.faceToTarget.toFixed(1)}° · Path {formatPath(s.clubPath)} · F-to-P{' '}
+                {s.club} · Face {s.faceToTarget.toFixed(1)}° · Path {formatPath(s.clubPath)} · Start {s.shape.startLine.toFixed(1)}° · F-to-P{' '}
                 {s.shape.faceToPath.toFixed(1)}° · {s.shape.name}
               </title>
             </circle>
@@ -430,6 +430,7 @@ function DrillPanel({ label, shots, onClear }) {
               <th>CLUB</th>
               <th className="num">FACE</th>
               <th className="num">PATH</th>
+              <th className="num">START</th>
               <th className="num">F-TO-P</th>
               <th>CLASSIFICATION</th>
             </tr>
@@ -450,6 +451,17 @@ function DrillPanel({ label, shots, onClear }) {
                     {s.faceToTarget > 0 ? '+' : ''}{s.faceToTarget.toFixed(1)}°
                   </td>
                   <td className="num">{formatPath(s.clubPath)}</td>
+                  <td
+                    className="num"
+                    style={{
+                      color:
+                        Math.abs(s.shape.startLine) > 3 ? 'var(--amber)' : 'var(--text)',
+                      fontWeight: 600,
+                    }}
+                    title="Estimated initial direction of ball flight (0.75 × face + 0.25 × path)"
+                  >
+                    {s.shape.startLine > 0 ? '+' : ''}{s.shape.startLine.toFixed(1)}°
+                  </td>
                   <td
                     className="num"
                     style={{
