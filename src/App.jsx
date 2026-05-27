@@ -4,6 +4,7 @@ import { loadUnits, saveUnits } from './lib/units';
 import {
   getAllShots, addShots, clearAllShots, deleteSession,
   deleteShot, updateShot, updateShots, migrateDedupKeys,
+  exportAllShotsAsJson, makeExportFilename, importShotsFromJson,
 } from './lib/storage';
 import { parseForesightFile } from './lib/parser';
 import TopBar from './components/TopBar';
@@ -167,6 +168,70 @@ export default function App() {
     setConfirmClear(false);
   }
 
+  /**
+   * Export the entire shot store as a JSON backup file. Uses the standard
+   * browser anchor-and-click pattern: build a Blob, create an object URL,
+   * synthesize a download click, then revoke the URL. No data leaves the
+   * device (no upload, no server).
+   */
+  async function handleExport() {
+    setImportStatus({ status: 'loading', message: 'Preparing export…' });
+    try {
+      const blob = await exportAllShotsAsJson();
+      const filename = makeExportFilename();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a tick so the download has time to kick off.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setImportStatus({
+        status: 'success',
+        message: `Exported ${shots.length} shots to ${filename}`,
+      });
+      setTimeout(() => setImportStatus(null), 5000);
+    } catch (e) {
+      console.error(e);
+      setImportStatus({ status: 'error', message: 'Export failed: ' + e.message });
+    }
+  }
+
+  /**
+   * Import a TraceLab JSON backup. Reads the file as text, hands off to
+   * importShotsFromJson which validates the envelope and merges shots
+   * with the existing dedupe rules (skip-existing, never overwrite).
+   *
+   * Note: this is a DIFFERENT path from handleFile (the CSV/XLSX import).
+   * That one parses raw launch-monitor exports; this one restores a
+   * previously-exported TraceLab backup. Same dedupe behaviour at the
+   * storage layer, different parsing.
+   */
+  async function handleBackupImport(file) {
+    setImportStatus({ status: 'loading', message: `Reading ${file.name}…` });
+    try {
+      const text = await file.text();
+      const { added, skipped, total } = await importShotsFromJson(text);
+      const all = await getAllShots();
+      setShots(all);
+      const detail =
+        total === 0
+          ? 'Backup file contained no shots'
+          : skipped === 0
+          ? `Imported ${added} shots`
+          : added === 0
+          ? `All ${total} shots already in your database — nothing to import`
+          : `Imported ${added} new shots · skipped ${skipped} duplicates`;
+      setImportStatus({ status: 'success', message: detail });
+      setTimeout(() => setImportStatus(null), 6000);
+    } catch (e) {
+      console.error(e);
+      setImportStatus({ status: 'error', message: e.message || 'Import failed' });
+    }
+  }
+
   async function handleDeleteSession(id) {
     await deleteSession(id);
     const all = await getAllShots();
@@ -272,6 +337,9 @@ export default function App() {
                 onDeleteSession={(id) => setConfirmDelete(id)}
                 onClearAll={() => setConfirmClear(true)}
                 onPinSession={handlePinSession}
+                onExport={handleExport}
+                onBackupImport={handleBackupImport}
+                shotCount={shots.length}
               />
             )}
           </>
