@@ -356,3 +356,46 @@ export async function migrateDedupKeys() {
   });
   return touched.length;
 }
+
+/**
+ * Backfill shotType + equipment on shots imported before those fields
+ * existed. Every legacy shot becomes shotType='full' (so existing analysis
+ * baselines are unchanged) and equipment=null (untagged). Idempotent via a
+ * meta flag; safe to call on every boot.
+ */
+export async function migrateShotMeta() {
+  const META_KEY = 'shotmeta-migration-v1';
+  const db = await openDB();
+  const already = await new Promise((resolve) => {
+    const tx = db.transaction(STORE_META, 'readonly');
+    const req = tx.objectStore(STORE_META).get(META_KEY);
+    req.onsuccess = () => resolve(req.result?.value === true);
+    req.onerror = () => resolve(false);
+  });
+  if (already) return 0;
+
+  const shots = await getAllShots();
+  const touched = [];
+  for (const s of shots) {
+    const patch = {};
+    if (s.shotType == null) patch.shotType = 'full';
+    if (!('equipment' in s)) patch.equipment = null;
+    if (Object.keys(patch).length) touched.push({ ...s, ...patch });
+  }
+  if (touched.length) {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_SHOTS, 'readwrite');
+      const store = tx.objectStore(STORE_SHOTS);
+      for (const s of touched) store.put(s);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_META, 'readwrite');
+    tx.objectStore(STORE_META).put({ key: META_KEY, value: true });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  return touched.length;
+}

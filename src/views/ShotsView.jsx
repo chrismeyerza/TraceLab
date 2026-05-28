@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { clubColor, orderedClubs, normalizeClubName } from '../lib/clubs';
 import { convertSpeed, convertDistance, speedLabel, distLabel } from '../lib/units';
 import { formatPath } from '../lib/shape';
+import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
+import { EQUIPMENT_BRANDS } from '../data/equipment';
 
 /**
  * Shots view: raw editable table of every shot in the current filter scope.
@@ -34,7 +36,7 @@ import { formatPath } from '../lib/shape';
 // text. `num` styles the column as numeric (right-aligned). `render` produces
 // the cell content from a shot record. `width` is optional and helps keep
 // tables tidy when columns vary across tabs.
-const makeColumns = (units) => ({
+const makeColumns = (units, userName) => ({
   // ===== Always-present columns ======================================
   when: {
     key: 'createdAt',
@@ -46,6 +48,29 @@ const makeColumns = (units) => ({
           })
         : '—',
     style: { fontSize: 10, color: 'var(--text-dim)' },
+  },
+  // User column — shows which profile each shot belongs to. Resolved via the
+  // userName lookup passed in from App. Falls back to "—" for shots with no
+  // userId (shouldn't happen post-backfill, but robust to legacy data).
+  user: {
+    key: 'userId', label: 'USER',
+    render: (s) => userName(s.userId),
+    style: { fontSize: 11, color: 'var(--text-dim)' },
+  },
+  // Shot type — Full / Pitch / Chip etc. Defaults to 'full'. The cell is a
+  // plain label; editing happens via the dedicated picker (handled inline in
+  // the row render, like the club chip).
+  shotType: {
+    key: 'shotType', label: 'TYPE',
+    render: (s) => shotTypeLabel(s.shotType || 'full'),
+    style: { fontSize: 11, color: 'var(--text-dim)' },
+  },
+  // Equipment — physical club. Null = untagged → shown as "—". Stop-gap
+  // capture; the cell is a plain label, edited via the picker.
+  equipment: {
+    key: 'equipment', label: 'EQUIP',
+    render: (s) => s.equipment || '—',
+    style: { fontSize: 11, color: 'var(--text-dim)' },
   },
   // club rendered specially because it's the editable chip — handled inline
   // ===== Ball columns ================================================
@@ -197,7 +222,7 @@ const makeColumns = (units) => ({
 const TABS = {
   summary: {
     label: 'Summary',
-    cols: ['when', 'ballSpeed', 'efficiency', 'carry', 'totalDist', 'faceToPath'],
+    cols: ['when', 'user', 'shotType', 'equipment', 'ballSpeed', 'efficiency', 'carry', 'totalDist', 'faceToPath'],
   },
   ball: {
     label: 'Ball',
@@ -221,15 +246,28 @@ const TABS = {
   },
 };
 
-export default function ShotsView({ shots, units, allClubs, onUpdateShot, onUpdateShots, onDeleteShot }) {
+export default function ShotsView({ shots, units, allClubs, users, onUpdateShot, onUpdateShots, onDeleteShot }) {
   const [tab, setTab] = useState('summary');
   const [sortKey, setSortKey] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
   const [selected, setSelected] = useState(new Set());
   const [editing, setEditing] = useState(null); // shotId for inline picker
   const [bulkLabelOpen, setBulkLabelOpen] = useState(false);
+  const [bulkTypeOpen, setBulkTypeOpen] = useState(false);
+  const [bulkEquipOpen, setBulkEquipOpen] = useState(false);
+  const [editingType, setEditingType] = useState(null); // shotId for inline type picker
+  const [editingEquip, setEditingEquip] = useState(null); // shotId for inline equip picker
 
-  const columns = useMemo(() => makeColumns(units), [units]);
+  // userId → display name lookup. Memoised on the users list. Unknown ids
+  // (e.g. a shot attributed to a since-deleted user) resolve to a dimmed
+  // placeholder rather than blank, so orphaned attribution is visible.
+  const userName = useMemo(() => {
+    const map = {};
+    (users || []).forEach((u) => { map[u.id] = u.name; });
+    return (id) => (id == null ? '—' : (map[id] || 'Unknown'));
+  }, [users]);
+
+  const columns = useMemo(() => makeColumns(units, userName), [units, userName]);
   const tabConfig = TABS[tab];
 
   // If user switches to a tab that doesn't include the current sortKey,
@@ -312,8 +350,14 @@ export default function ShotsView({ shots, units, allClubs, onUpdateShot, onUpda
               {selected.size} shot{selected.size === 1 ? '' : 's'} selected
             </div>
             <div style={{ flex: 1 }} />
-            <button className="btn-secondary" onClick={() => setBulkLabelOpen(true)}>
+            <button className="btn-secondary" onClick={() => { setBulkLabelOpen(true); setBulkTypeOpen(false); setBulkEquipOpen(false); }}>
               Relabel club
+            </button>
+            <button className="btn-secondary" onClick={() => { setBulkTypeOpen(true); setBulkLabelOpen(false); setBulkEquipOpen(false); }}>
+              Set type
+            </button>
+            <button className="btn-secondary" onClick={() => { setBulkEquipOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); }}>
+              Set equipment
             </button>
             <button
               className="btn-danger"
@@ -340,6 +384,30 @@ export default function ShotsView({ shots, units, allClubs, onUpdateShot, onUpda
               }}
               onClose={() => setBulkLabelOpen(false)}
               label={`Relabel ${selected.size} shot${selected.size === 1 ? '' : 's'} as:`}
+            />
+          )}
+          {bulkTypeOpen && (
+            <TypePicker
+              onPick={async (type) => {
+                const updates = [...selected].map((id) => ({ id, patch: { shotType: type } }));
+                await onUpdateShots(updates);
+                setBulkTypeOpen(false);
+                setSelected(new Set());
+              }}
+              onClose={() => setBulkTypeOpen(false)}
+              label={`Set type for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
+            />
+          )}
+          {bulkEquipOpen && (
+            <EquipmentPicker
+              onPick={async (equip) => {
+                const updates = [...selected].map((id) => ({ id, patch: { equipment: equip } }));
+                await onUpdateShots(updates);
+                setBulkEquipOpen(false);
+                setSelected(new Set());
+              }}
+              onClose={() => setBulkEquipOpen(false)}
+              label={`Set equipment for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
             />
           )}
         </div>
@@ -410,6 +478,42 @@ export default function ShotsView({ shots, units, allClubs, onUpdateShot, onUpda
                   {tabConfig.cols.filter((c) => c !== 'when').map((c) => {
                     const col = columns[c];
                     const style = col.cellStyle ? col.cellStyle(s) : (col.style || {});
+                    // shotType and equipment are inline-editable: clicking the
+                    // cell opens a small picker beneath it.
+                    if (c === 'shotType') {
+                      return (
+                        <td key={col.key} style={{ ...style, cursor: 'pointer' }}
+                            onClick={() => { setEditingType(editingType === s.id ? null : s.id); setEditingEquip(null); }}
+                            title="Click to set shot type">
+                          <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
+                          {editingType === s.id && (
+                            <TypePicker
+                              current={s.shotType || 'full'}
+                              onPick={async (type) => { await onUpdateShot(s.id, { shotType: type }); setEditingType(null); }}
+                              onClose={() => setEditingType(null)}
+                              label="Set shot type:"
+                            />
+                          )}
+                        </td>
+                      );
+                    }
+                    if (c === 'equipment') {
+                      return (
+                        <td key={col.key} style={{ ...style, cursor: 'pointer' }}
+                            onClick={() => { setEditingEquip(editingEquip === s.id ? null : s.id); setEditingType(null); }}
+                            title="Click to set equipment">
+                          <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
+                          {editingEquip === s.id && (
+                            <EquipmentPicker
+                              current={s.equipment}
+                              onPick={async (equip) => { await onUpdateShot(s.id, { equipment: equip }); setEditingEquip(null); }}
+                              onClose={() => setEditingEquip(null)}
+                              label="Set equipment:"
+                            />
+                          )}
+                        </td>
+                      );
+                    }
                     return (
                       <td key={col.key} className={col.num ? 'num' : ''} style={style}>
                         {col.render(s)}
@@ -513,6 +617,120 @@ function ClubPicker({ clubs, onPick, onClose, label, current, compact }) {
           CANCEL
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Shot-type picker. Simple chip grid of the fixed SHOT_TYPES enum. Used for
+ * both bulk-setting (from the action bar) and inline per-shot editing.
+ */
+function TypePicker({ onPick, onClose, label, current }) {
+  return (
+    <div
+      style={{
+        marginTop: 8, padding: 12,
+        background: 'var(--bg-elev-3)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 6,
+      }}
+    >
+      <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+        {SHOT_TYPES.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => onPick(t.key)}
+            disabled={t.key === current}
+            className={`chip ${t.key === current ? 'active' : ''}`}
+            style={t.key === current ? {
+              background: 'var(--green)', borderColor: 'var(--green)', color: '#0a0e0c',
+            } : {}}
+          >
+            {t.label}
+          </button>
+        ))}
+        <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: 9, marginLeft: 6 }} onClick={onClose}>
+          CANCEL
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Equipment picker — fixed brand → model taxonomy (stop-gap, see
+ * data/equipment.js). Two-step: pick a brand, then a model (or the bare
+ * brand). A "Clear / untag" option sets equipment back to null. No free
+ * text — that's the deferred "proper" version.
+ */
+function EquipmentPicker({ onPick, onClose, label, current }) {
+  const [brand, setBrand] = useState(null);
+  const brandObj = EQUIPMENT_BRANDS.find((b) => b.brand === brand);
+  return (
+    <div
+      style={{
+        marginTop: 8, padding: 12,
+        background: 'var(--bg-elev-3)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 6,
+      }}
+    >
+      <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+        {label}
+      </div>
+      {!brand ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {EQUIPMENT_BRANDS.map((b) => (
+            <button
+              key={b.brand}
+              onClick={() => setBrand(b.brand)}
+              className="chip"
+            >
+              {b.brand}
+            </button>
+          ))}
+          <button
+            className="btn-secondary"
+            style={{ padding: '4px 10px', fontSize: 9, marginLeft: 6 }}
+            onClick={() => onPick(null)}
+            title="Remove the equipment tag from these shots"
+          >
+            CLEAR TAG
+          </button>
+          <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: 9 }} onClick={onClose}>
+            CANCEL
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <button
+              className="btn-secondary"
+              style={{ padding: '3px 8px', fontSize: 9 }}
+              onClick={() => setBrand(null)}
+            >
+              ‹ BRANDS
+            </button>
+            <span style={{ fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: 700, color: 'var(--text-strong)' }}>
+              {brand}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {/* Bare brand option ("Titleist" with no model) */}
+            <button onClick={() => onPick(brand)} className="chip">
+              {brand} (unspecified)
+            </button>
+            {brandObj?.models.map((m) => (
+              <button key={m} onClick={() => onPick(`${brand} ${m}`)} className="chip">
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -28,7 +28,7 @@ export default function UserModal({ mode, initial, onSubmit, onCancel }) {
     if (el) setTimeout(() => el.focus(), 30);
   }, []);
 
-  const isFirstLaunch = mode === 'firstLaunch';
+  const isFirstLaunch = mode === 'firstLaunch' || mode === 'firstLaunchEdit';
   const trimmedName = name.trim();
   const handicapValid =
     handicap === '' || (!isNaN(Number(handicap)) && Number(handicap) >= 0 && Number(handicap) <= 54);
@@ -53,7 +53,7 @@ export default function UserModal({ mode, initial, onSubmit, onCancel }) {
           </div>
           {isFirstLaunch && (
             <div className="modal-subtitle">
-              Set up your profile to get started. You can add more users later.
+              We've set up a profile for you — just confirm your handicap and dominant hand. You can change the name or add more users any time.
             </div>
           )}
         </div>
