@@ -11,11 +11,18 @@ export default function ScopeSummary({
   shotsShown, totalShots,
   selectedClubs, allClubs,
   timeFilter, pinnedSession,
+  selectedTypes, showTypes,
 }) {
   const isFilteringClubs = selectedClubs && allClubs && selectedClubs.length !== allClubs.length;
   const isFilteringTime = timeFilter && timeFilter !== 'all';
   const isPinned = !!pinnedSession;
-  const anyFilter = isFilteringClubs || isFilteringTime || isPinned;
+  // Type filter counts as active when it's narrowing to something other than
+  // "everything". The default full-only state is the baseline, but when shot
+  // types exist in the data, even "full only" is worth showing so the user
+  // knows non-full shots are being excluded.
+  const isFilteringTypes = showTypes && selectedTypes &&
+    !(selectedTypes.length > 1 && selectedTypes.includes('full'));
+  const anyFilter = isFilteringClubs || isFilteringTime || isPinned || isFilteringTypes;
 
   // No filters active — keep it quiet. The shot count is visible in the page
   // header anyway, no need to duplicate that information here.
@@ -28,12 +35,21 @@ export default function ScopeSummary({
     '90d': 'Last 90 days',
   }[timeFilter];
 
+  const typeLabels = {
+    full: 'Full', '3-quarter': '3/4', half: 'Half', pitch: 'Pitch',
+    chip: 'Chip', bunker: 'Bunker', flop: 'Flop', other: 'Other',
+  };
+
   // Build the chip stack in a deterministic order so the user's eye can
   // anticipate where each piece of context sits.
   const chips = [];
   if (isFilteringClubs) chips.push({ key: 'clubs', label: selectedClubs.join(', '), tone: 'club' });
   if (isFilteringTime) chips.push({ key: 'time', label: timeLabel, tone: 'time' });
   if (isPinned) chips.push({ key: 'pin', label: `Session: ${pinnedSession.label}`, tone: 'pin' });
+  if (isFilteringTypes) {
+    const label = selectedTypes.map((t) => typeLabels[t] || t).join(', ');
+    chips.push({ key: 'types', label, tone: 'type' });
+  }
 
   const pct = totalShots > 0 ? Math.round((shotsShown / totalShots) * 100) : 0;
   return (

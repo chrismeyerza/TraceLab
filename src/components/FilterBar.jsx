@@ -1,4 +1,5 @@
 import { clubColor } from '../lib/clubs';
+import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
 
 /**
  * Filter bar with two stacked rows:
@@ -26,6 +27,7 @@ export default function FilterBar({
   clubs, selected, setSelected,
   timeFilter, setTimeFilter,
   pinnedSession, setPinnedSession,
+  showTypes, availableTypes, selectedTypes, setSelectedTypes,
 }) {
   // Click behaviour matches list-selection conventions everywhere else:
   //  Plain click   → focus on ONLY this club (replaces the entire selection)
@@ -55,15 +57,41 @@ export default function FilterBar({
     }
   };
 
+  const typesActive = showTypes && selectedTypes.length === 1 && selectedTypes[0] === 'full'
+    ? false  // default state (full-only) doesn't count as "active"
+    : showTypes && !(selectedTypes.length === availableTypes.length);
+
   const isAnyFilterActive =
     (selected.length !== clubs.length) ||
     (timeFilter !== 'all') ||
-    !!pinnedSession;
+    !!pinnedSession ||
+    typesActive;
 
   const clearAll = () => {
     setSelected(clubs);
     setTimeFilter('all');
     setPinnedSession(null);
+    if (showTypes) setSelectedTypes(['full']); // reset to clean baseline
+  };
+
+  // Shot-type chip click. Same focus/additive model as clubs: plain click
+  // focuses on just that type, cmd/ctrl-click toggles it into the selection.
+  const clickType = (key, e) => {
+    const isAdditive = e && (e.metaKey || e.ctrlKey);
+    if (isAdditive) {
+      if (selectedTypes.includes(key)) {
+        if (selectedTypes.length > 1) setSelectedTypes(selectedTypes.filter((x) => x !== key));
+      } else {
+        setSelectedTypes([...selectedTypes, key]);
+      }
+    } else {
+      if (selectedTypes.length === 1 && selectedTypes[0] === key) {
+        // re-click sole selection → select all available types
+        setSelectedTypes(availableTypes);
+      } else {
+        setSelectedTypes([key]);
+      }
+    }
   };
 
   return (
@@ -138,6 +166,30 @@ export default function FilterBar({
           )}
         </div>
       </div>
+      {showTypes && (
+        <div className="filter-bar">
+          <span className="filter-label">TYPES</span>
+          <div className="chip-row">
+            <button
+              className={`chip ${selectedTypes.length === availableTypes.length ? 'active' : ''}`}
+              onClick={() => setSelectedTypes(availableTypes)}
+              title="Show all shot types"
+            >
+              ALL
+            </button>
+            {SHOT_TYPES.filter((t) => availableTypes.includes(t.key)).map((t) => (
+              <button
+                key={t.key}
+                className={`chip ${selectedTypes.includes(t.key) ? 'active' : ''}`}
+                onClick={(e) => clickType(t.key, e)}
+                title="Click to focus on just this type · Cmd/Ctrl-click to add to selection"
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

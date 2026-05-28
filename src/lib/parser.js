@@ -331,6 +331,19 @@ export function parseForesightFile(input, fileName) {
       // relabelling a shot (in the Shots view) doesn't change its identity —
       // re-importing the original CSV after a relabel still dedupes correctly.
       shot.dedup = `${shot.createdAt}|${shot.ballSpeed}`;
+
+      // Shot type: intent of the shot. Foresight exports don't distinguish a
+      // full swing from a pitch / chip / bunker shot — so every imported shot
+      // defaults to 'full' and the user re-tags non-full shots afterwards.
+      // This is what lets the analysis views default to full-only and keep
+      // wedge baselines clean.
+      shot.shotType = 'full';
+
+      // Equipment tag: which physical club. Null on import (untagged). Set
+      // later via the fixed brand/model picker in the Shots view. Stop-gap
+      // capture only for now — not yet filtered or analysed.
+      shot.equipment = null;
+
       return shot;
     })
     .filter((s) => s.ballSpeed != null); // drop entirely empty rows

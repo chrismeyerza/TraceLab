@@ -3,7 +3,7 @@ import { orderedClubs } from './lib/clubs';
 import { loadUnits, saveUnits } from './lib/units';
 import {
   getAllShots, addShots, clearAllShots, deleteSession,
-  deleteShot, updateShot, updateShots, migrateDedupKeys,
+  deleteShot, updateShot, updateShots, migrateDedupKeys, migrateShotMeta,
   exportAllShotsAsJson, makeExportFilename, importShotsFromJson,
 } from './lib/storage';
 import { parseForesightFile } from './lib/parser';
@@ -44,6 +44,10 @@ export default function App() {
   const [view, setView] = useState('sessions');
   const [selectedClubs, setSelectedClubs] = useState([]);
   const [timeFilter, setTimeFilter] = useState('all');
+  // Shot-type filter. Defaults to full-only so analysis baselines stay clean
+  // (the whole point of shot typing). User widens via the TYPES filter row,
+  // which only appears once the data actually contains non-full shots.
+  const [selectedTypes, setSelectedTypes] = useState(['full']);
   const [pinnedSession, setPinnedSession] = useState(null); // {id, label} or null
   const [loading, setLoading] = useState(true);
   const [importStatus, setImportStatus] = useState(null);
@@ -64,7 +68,6 @@ export default function App() {
   const rightHanded = activeUser?.rightHanded ?? true;
 
   // Modal & flow states
-  const [showFirstLaunch, setShowFirstLaunch] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userModalMode, setUserModalMode] = useState(null); // 'add' | 'edit' | null
   const [userModalInitial, setUserModalInitial] = useState(null);
@@ -90,14 +93,29 @@ export default function App() {
     (async () => {
       try {
         await migrateDedupKeys();
+        await migrateShotMeta();
         const existing = getUsers();
         setUsers(existing);
         setActiveUserIdState(getActiveUserId());
-        if (existing.length === 0) {
-          setShowFirstLaunch(true);
-        }
         const all = await getAllShots();
-        setShots(all);
+        if (existing.length === 0) {
+          // First launch: auto-seed a default user so the experience is
+          // "confirm/complete your profile" rather than "fill in a blank
+          // form". The user becomes active immediately, existing shots get
+          // backfilled to them, and we open the edit modal pre-filled so the
+          // person can set handicap + hand (and change the name if they want).
+          const seeded = addUser({ name: 'Chris Meyer', handicap: null, rightHanded: true });
+          await backfillShotUsers(getAllShots, updateShots, seeded.id);
+          const reloaded = await getAllShots();
+          setShots(reloaded);
+          setUsers(getUsers());
+          setActiveUserIdState(getActiveUserId());
+          // Open the edit modal on the seeded user so they can complete it.
+          setUserModalInitial(seeded);
+          setUserModalMode('firstLaunchEdit');
+        } else {
+          setShots(all);
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -107,6 +125,15 @@ export default function App() {
   }, []);
 
   const allClubs = useMemo(() => orderedClubs([...new Set(shots.map((s) => s.club))]), [shots]);
+
+  // Distinct shot types present in the data. Used to decide whether to show
+  // the TYPES filter row at all — no point showing it when everything is
+  // 'full' (the common case), as it'd just be noise.
+  const availableTypes = useMemo(() => {
+    const set = new Set(shots.map((s) => s.shotType || 'full'));
+    return [...set];
+  }, [shots]);
+  const hasNonFullTypes = availableTypes.some((t) => t !== 'full');
 
   // Default-select every club when data first loads. Also reset when the
   // underlying club set changes (e.g. after a bulk relabel that introduces
@@ -170,9 +197,13 @@ export default function App() {
       if (selectedClubs.length && !selectedClubs.includes(s.club)) return false;
       if (pinnedSession && s.sessionId !== pinnedSession.id) return false;
       if (!inTimeWindow(s, newestSessionIds)) return false;
+      // Shot-type filter. A shot's type defaults to 'full' if unset (legacy
+      // shots pre-migration, though migration should have backfilled them).
+      const type = s.shotType || 'full';
+      if (selectedTypes.length && !selectedTypes.includes(type)) return false;
       return true;
     });
-  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds]);
+  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedTypes]);
 
   /**
    * Step 1 of import: parse the file and pause. We don't write to storage
@@ -337,15 +368,14 @@ export default function App() {
    *   - edit         → update existing
    */
   async function handleUserSubmit(formData) {
-    if (showFirstLaunch) {
-      const created = addUser(formData);
+    // First-launch edit: the user was already auto-seeded and shots already
+    // backfilled during boot. This submit just completes their profile
+    // (handicap, hand, possibly a name change).
+    if (userModalMode === 'firstLaunchEdit' && userModalInitial?.id) {
+      updateUser(userModalInitial.id, formData);
       refreshUsers();
-      // Backfill all existing shots to this newly-created user. They had no
-      // owner before; now they do.
-      await backfillShotUsers(getAllShots, updateShots, created.id);
-      const all = await getAllShots();
-      setShots(all);
-      setShowFirstLaunch(false);
+      setUserModalMode(null);
+      setUserModalInitial(null);
       return;
     }
     if (userModalMode === 'edit' && userModalInitial?.id) {
@@ -449,22 +479,19 @@ export default function App() {
         />
       )}
 
-      {showFirstLaunch && (
-        <UserModal
-          mode="firstLaunch"
-          onSubmit={handleUserSubmit}
-        />
-      )}
-
       {userModalMode && (
         <UserModal
           mode={userModalMode}
           initial={userModalInitial}
           onSubmit={handleUserSubmit}
-          onCancel={() => {
-            setUserModalMode(null);
-            setUserModalInitial(null);
-          }}
+          onCancel={
+            userModalMode === 'firstLaunchEdit'
+              ? undefined
+              : () => {
+                  setUserModalMode(null);
+                  setUserModalInitial(null);
+                }
+          }
         />
       )}
 
@@ -500,6 +527,10 @@ export default function App() {
                   setTimeFilter={setTimeFilter}
                   pinnedSession={pinnedSession}
                   setPinnedSession={setPinnedSession}
+                  showTypes={hasNonFullTypes}
+                  availableTypes={availableTypes}
+                  selectedTypes={selectedTypes}
+                  setSelectedTypes={setSelectedTypes}
                 />
                 <ScopeSummary
                   shotsShown={filteredShots.length}
@@ -508,6 +539,8 @@ export default function App() {
                   allClubs={allClubs}
                   timeFilter={timeFilter}
                   pinnedSession={pinnedSession}
+                  selectedTypes={selectedTypes}
+                  showTypes={hasNonFullTypes}
                 />
               </>
             )}
@@ -523,6 +556,7 @@ export default function App() {
                 shots={filteredShots}
                 units={units}
                 allClubs={allClubs}
+                users={users}
                 onUpdateShot={handleUpdateShot}
                 onUpdateShots={handleUpdateShots}
                 onDeleteShot={handleDeleteShot}
