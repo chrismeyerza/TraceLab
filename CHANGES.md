@@ -1,126 +1,138 @@
-# Changes — Export & Import backup (PR 4.11)
+# Changes — User identity & profiles (PR 4.12)
 
-A clean, local, file-based backup-and-restore mechanism. Solves two
-real problems:
+First-class user profiles. Each shot is now attributed to a specific person.
+Unlocks future features (per-user analysis, multi-user households, cloud
+sync) without changing how the app feels for solo use.
 
-1. **Multi-machine workflow.** Your Mac and your other machine have
-   diverged shot data. You can now Export from one, Restore on the other.
-2. **No backups.** IndexedDB is the only place your shots live. Browser
-   data wipe, profile corruption, switching browsers — any of these and
-   the data was gone. Now you can carry a snapshot off.
+## What this adds
 
-## How it works
+### A new user concept
 
-### Export
+Every user has:
 
-A button in the Sessions view → Data Management → Backup & Restore section.
-Click it, get a download named like:
+- **Name** (required)
+- **Handicap** (0-54, optional)
+- **Dominant hand** (RH / LH) — drives Shape view classification orientation;
+  lefties now get correctly-mirrored draw/fade labels for free
 
-```
-tracelab-export-20260527-0830.tracelab.json
-```
+Stored in localStorage (not IndexedDB) because they're small, rarely
+change, and need to be available synchronously at app boot. The active
+user id is also persisted there.
 
-The `.tracelab.json` extension makes it obvious which app produced it.
-The timestamp is when the export was made. The file is plain JSON that
-you can read in any text editor.
+### First-launch flow
 
-Schema:
+If there are no users when the app starts, a non-dismissable modal opens:
 
-```json
-{
-  "tracelab": {
-    "version": 1,
-    "exportedAt": "2026-05-27T08:30:00.000Z",
-    "shotCount": 247
-  },
-  "shots": [ { ... }, { ... }, ... ]
-}
-```
+> **Welcome to TraceLab**
+> Set up your profile to get started. You can add more users later.
+>
+> [Name input]
+> [Handicap input — optional 0-54]
+> [Dominant hand: RH / LH chips]
+>
+> [Get started]
 
-The `tracelab` envelope is the recognisability marker — it's how Import
-knows a file is actually one of ours, not random JSON. The `version`
-field is the migration hook: when the shot schema changes in the future,
-import can migrate older files automatically.
+Once submitted, the user becomes active and **all existing shots in
+IndexedDB get backfilled** to attribute them to this user. So on your
+upgrade, your 22 existing shots become "Chris Meyer's shots" the moment
+you fill in the modal.
 
-IndexedDB auto-increment IDs are stripped on export. They're database-local;
-they should not pin across machines.
+### Gear icon → Settings panel
 
-### Restore
+New gear icon in the TopBar (between the LATEST stat pill and the right
+edge). Click it to open the Settings popover. Currently houses just the
+user list — but it's the right home for any future global preferences.
 
-A button next to Export. Pick a `.tracelab.json` file → it's validated
-(envelope present, version known, shots array OK) → merged into the
-current database.
+Active user's name now appears as a small label in the TopBar to its
+left, so you always know which profile you're operating as.
 
-**Dedupe behaviour: skip-existing.** Each shot has a stable dedup key
-(`timestamp|ballSpeed`, no club). Any incoming shot whose key already
-exists in your database is **skipped** — your local edits (e.g. club
-relabels) are never overwritten by the imported version.
+### Adding & editing users
 
-Result message tells you exactly what happened:
+In the Settings panel:
 
-- `Imported 47 new shots` — clean addition
-- `Imported 12 new shots · skipped 35 duplicates` — partial overlap
-- `All 47 shots already in your database — nothing to import` — full
-  duplicate file
+- **Click any user row** → switch active user
+- **Click the ✎ icon** → edit that user (same fields as creation)
+- **Click the × icon** → delete user. (Disabled on the last user — would
+  leave shots orphaned. Note that delete does NOT cascade-delete shots —
+  the shots remain in IndexedDB with a now-orphaned userId. Deliberate;
+  cascade-delete would be a destructive surprise.)
+- **+ Add user** button → opens the same modal in `add` mode
 
-### Validation
+### Import attribution
 
-The import path throws a clear error on:
+When importing a CSV / XLSX file with the new system:
 
-- File isn't valid JSON
-- Missing `tracelab` envelope (random JSON, not one of ours)
-- Unknown schema version (forward-compat guard — if a future TraceLab
-  exports v2, this build refuses cleanly rather than corrupting data)
-- `shots` field is missing or not an array
+- **Single-user case** (just Chris): no prompt. Shots auto-attributed.
+- **Multi-user case**: an attribution modal appears between parse and
+  store, defaulting selection to the active user (the common case).
+  Options: pick an existing user, create a new one inline, or cancel.
 
-Errors surface in the same status banner that import errors use. The
-user sees them; nothing silently fails.
+The "Create new user" path is wired in: it opens the AddUser modal with
+the pending import paused, then auto-commits the import to the newly
+created user when they submit.
 
-### What's NOT in this PR
+### Per-user right-handedness
 
-- **No cloud sync.** This is purely local file-based. Cloud comes later.
-- **No replace-mode.** Import always merges. If you want to wipe and
-  reload, use Clear All Data first, then Import.
-- **No preview before import.** I considered showing a diff table
-  before merging, but the skip-existing semantics make the merge safe
-  by default. Can add a preview later if it turns out to matter.
-- **No auto-export.** No background backups, no scheduled snapshots.
-  User-triggered only.
-- **Settings not exported.** Just the shots. Unit preferences are
-  per-browser; they don't need to round-trip with the data.
+`rightHanded` is no longer a hardcoded `useState(true)` at the App level.
+It's now derived from the active user's profile, so:
+
+- Switching from a RH user to a LH user (or vice versa) automatically
+  remirrors Shape classification — draws and fades flip as you'd expect
+- Lefties get a correct view of their swing pattern for the first time
+
+## What this does NOT change
+
+- **No user names displayed in tables yet.** When you only have one user,
+  surfacing the name everywhere would be visual noise. Once you have
+  multiple users, future PRs can add a user filter row alongside Clubs /
+  Time / Pinned Session.
+- **Storage path unchanged.** Shots still live in IndexedDB; userId is just
+  a new field on each shot record. Backwards compatible: existing shots
+  without userId still load and display correctly until backfilled.
+- **Export/Import for backups already round-trips userId** by virtue of
+  preserving all shot fields. So PR 4.11 backups made before PR 4.12 will
+  import as expected (with shots needing backfill); backups made after
+  will round-trip cleanly.
+- **No CSS rebuild.** Just incremental modal/settings styles added.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/storage.js` | New `exportAllShotsAsJson()`, `makeExportFilename()`, `importShotsFromJson()` functions. Uses existing `addShots()` for the actual merge — so dedupe behaviour is identical to the CSV import path. |
-| `src/App.jsx` | New `handleExport()` (builds Blob, synthesises download), `handleBackupImport()` (reads file text, hands to `importShotsFromJson`). Wires through to SessionsView. |
-| `src/views/SessionsView.jsx` | Data Management card extended: Backup & Restore subsection with Export + Restore buttons; divider before destructive Clear All Data action. |
+| `src/lib/users.js` | **NEW** — full user-management module (CRUD + active-user state + shot-backfill helper) |
+| `src/components/UserModal.jsx` | **NEW** — modal for first-launch / add / edit. Three modes from one component |
+| `src/components/SettingsPanel.jsx` | **NEW** — gear-anchored popover with user list & actions |
+| `src/components/ImportUserModal.jsx` | **NEW** — attribution prompt for multi-user imports |
+| `src/components/TopBar.jsx` | Adds gear button, active-user display, version bump (1.2 → 1.3) |
+| `src/App.jsx` | User state management, first-launch flow, attribution flow, per-user rightHanded |
+| `src/index.css` | Modal overlay styles, settings panel styles, gear button styles, form-row styles, btn-primary class |
 
 ## Verified
 
-- Production build clean
-- Round-trip test on your 22-shot CSV: exports to 22 KB JSON (~1 KB
-  per shot), parses back correctly, all 27 fields preserved including
-  the new `startLine` derived field from PR 4.10
-- Bad-input cases all throw the expected errors
-- IndexedDB autoincrement `id` correctly stripped on export
+- Production build clean (~5 KB extra CSS, ~6 KB extra JS for the new
+  modules)
+- Smoke-tested users module in isolation: CRUD all works, active-user
+  defaults sensibly, last-user delete refused, backfill idempotent
+- Manual code review: every user-derived value (rightHanded) flows
+  through React state so user switches re-render relevant views
 
-## Practical workflow
+## Practical experience on first run
 
-When you next pick up TraceLab on your other machine:
+After applying:
 
-1. On Mac: Sessions → Data Management → **Export backup**. Save the file.
-2. Transfer it however (email to yourself, AirDrop, Dropbox, USB).
-3. On other machine: Sessions → Data Management → **Restore backup**.
-   Pick the file. Done.
+1. App loads, you see "Welcome to TraceLab" modal
+2. Type your name, handicap (12.4 or whatever), click RIGHT-HANDED
+3. Click "Get started"
+4. Your 22 existing shots become attributed to you
+5. From here it looks identical to before — you're the only user, no
+   prompts, no extra UI noise
 
-Now both machines are in sync at the point of export. You can keep
-both running independently; they'll diverge again until the next
-export-import cycle. When that becomes painful, cloud sync is the
-proper fix — but for now this is the right level of effort.
+If you create a second user later (testing your spouse / a teaching pro
+demo / yourself before/after lessons), the gear menu becomes more
+visible, and CSV imports start prompting for attribution.
 
 ## What's next
 
-User name on import + per-shot tagging via club label remain on the
-backlog. Plus per-club swing fingerprint view if you want it.
+PR 4.13 — shot-type + equipment tagging (your wedge-as-pitch-vs-full
+problem). Two new orthogonal fields on every shot, with bulk-tag UI for
+selecting a range of shots from a session.

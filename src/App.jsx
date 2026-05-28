@@ -7,11 +7,18 @@ import {
   exportAllShotsAsJson, makeExportFilename, importShotsFromJson,
 } from './lib/storage';
 import { parseForesightFile } from './lib/parser';
+import {
+  getUsers, getActiveUserId, setActiveUserId,
+  addUser, updateUser, deleteUser, backfillShotUsers,
+} from './lib/users';
 import TopBar from './components/TopBar';
 import FilterBar from './components/FilterBar';
 import ScopeSummary from './components/ScopeSummary';
 import EmptyState from './components/EmptyState';
 import ConfirmDialog from './components/ConfirmDialog';
+import UserModal from './components/UserModal';
+import SettingsPanel from './components/SettingsPanel';
+import ImportUserModal from './components/ImportUserModal';
 import OverviewView from './views/OverviewView';
 import StrikeView from './views/StrikeView';
 import FlightView from './views/FlightView';
@@ -42,8 +49,28 @@ export default function App() {
   const [importStatus, setImportStatus] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [rightHanded] = useState(true); // TODO: settings toggle
   const [units, setUnits] = useState(loadUnits);
+
+  // User state. `users` is the full list; `activeUserId` is whichever one
+  // is currently selected. Both initialised from localStorage on mount.
+  // `rightHanded` is now derived per-user — lefties get correctly-mirrored
+  // Shape classification automatically.
+  const [users, setUsers] = useState([]);
+  const [activeUserId, setActiveUserIdState] = useState(null);
+  const activeUser = useMemo(
+    () => users.find((u) => u.id === activeUserId) || null,
+    [users, activeUserId]
+  );
+  const rightHanded = activeUser?.rightHanded ?? true;
+
+  // Modal & flow states
+  const [showFirstLaunch, setShowFirstLaunch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userModalMode, setUserModalMode] = useState(null); // 'add' | 'edit' | null
+  const [userModalInitial, setUserModalInitial] = useState(null);
+  // Pending CSV/XLSX import waiting for user attribution. Holds the parsed
+  // shots and metadata until the user picks who they belong to.
+  const [pendingImport, setPendingImport] = useState(null);
 
   const toggleUnits = () => {
     const next = units.distance === 'yds' ? { distance: 'm', speed: 'kmh' } : { distance: 'yds', speed: 'mph' };
@@ -51,13 +78,24 @@ export default function App() {
     saveUnits(next);
   };
 
-  // Initial load. Runs the dedup-key migration on first load after upgrade,
-  // then reads everything fresh so the in-memory state reflects the migrated
-  // dedup values. Migration is idempotent so re-runs are harmless.
+  const refreshUsers = () => {
+    setUsers(getUsers());
+    setActiveUserIdState(getActiveUserId());
+  };
+
+  // Initial load. User setup happens first so the first-launch modal can
+  // fire immediately if needed. Shots still load — they'll be backfilled to
+  // the user's id once the first-launch modal completes (see handleCreateUser).
   useEffect(() => {
     (async () => {
       try {
         await migrateDedupKeys();
+        const existing = getUsers();
+        setUsers(existing);
+        setActiveUserIdState(getActiveUserId());
+        if (existing.length === 0) {
+          setShowFirstLaunch(true);
+        }
         const all = await getAllShots();
         setShots(all);
       } catch (e) {
@@ -136,6 +174,14 @@ export default function App() {
     });
   }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds]);
 
+  /**
+   * Step 1 of import: parse the file and pause. We don't write to storage
+   * yet — we first need to know which user the shots should be attributed
+   * to. The ImportUserModal opens; on resolve, commitImport finishes.
+   *
+   * Edge case: if there's only one user, we skip the modal and attribute
+   * automatically. No point in prompting.
+   */
   async function handleFile(file) {
     setImportStatus({ status: 'loading', message: `Parsing ${file.name}...` });
     try {
@@ -146,7 +192,31 @@ export default function App() {
         setImportStatus({ status: 'error', message: 'No shots found in file' });
         return;
       }
-      const { added, skipped } = await addShots(newShots);
+      setImportStatus(null);
+      const currentUsers = getUsers();
+      if (currentUsers.length <= 1) {
+        // Single-user case — attribute and finish in one step.
+        const userId = currentUsers[0]?.id || getActiveUserId();
+        await commitImport(newShots, sessionLabel, userId);
+      } else {
+        // Multi-user case — pause and ask.
+        setPendingImport({ fileName: file.name, sessionLabel, shots: newShots });
+      }
+    } catch (e) {
+      console.error(e);
+      setImportStatus({ status: 'error', message: 'Failed to parse file: ' + e.message });
+    }
+  }
+
+  /**
+   * Step 2 of import: actually write the shots with a userId stamp.
+   * Called after the ImportUserModal resolves with a chosen user.
+   */
+  async function commitImport(newShots, sessionLabel, userId) {
+    setImportStatus({ status: 'loading', message: 'Importing…' });
+    try {
+      const stamped = newShots.map((s) => ({ ...s, userId }));
+      const { added, skipped } = await addShots(stamped);
       const all = await getAllShots();
       setShots(all);
       setImportStatus({
@@ -156,7 +226,22 @@ export default function App() {
       setTimeout(() => setImportStatus(null), 5000);
     } catch (e) {
       console.error(e);
-      setImportStatus({ status: 'error', message: 'Failed to parse file: ' + e.message });
+      setImportStatus({ status: 'error', message: 'Import failed: ' + e.message });
+    }
+  }
+
+  /** Resolution from the ImportUserModal. */
+  async function handleImportUserResolution(resolution) {
+    if (!pendingImport) return;
+    if (resolution.kind === 'useExisting') {
+      const { shots: newShots, sessionLabel } = pendingImport;
+      setPendingImport(null);
+      await commitImport(newShots, sessionLabel, resolution.userId);
+    } else if (resolution.kind === 'createNew') {
+      // Stash the pending import; open the add-user modal. When the user
+      // submits, the new user is created and we'll auto-commit to them.
+      setUserModalMode('add');
+      setUserModalInitial(null);
     }
   }
 
@@ -241,6 +326,73 @@ export default function App() {
     setConfirmDelete(null);
   }
 
+  // ===== User management handlers =======================================
+
+  /**
+   * Called by UserModal on submit. Resolves three different intent paths:
+   *   - firstLaunch  → create + backfill existing shots to this user
+   *   - add          → create. If there's a pending import, attribute it
+   *                    to the new user automatically (smooth flow from
+   *                    ImportUserModal → AddUser → Import)
+   *   - edit         → update existing
+   */
+  async function handleUserSubmit(formData) {
+    if (showFirstLaunch) {
+      const created = addUser(formData);
+      refreshUsers();
+      // Backfill all existing shots to this newly-created user. They had no
+      // owner before; now they do.
+      await backfillShotUsers(getAllShots, updateShots, created.id);
+      const all = await getAllShots();
+      setShots(all);
+      setShowFirstLaunch(false);
+      return;
+    }
+    if (userModalMode === 'edit' && userModalInitial?.id) {
+      updateUser(userModalInitial.id, formData);
+      refreshUsers();
+      setUserModalMode(null);
+      setUserModalInitial(null);
+      return;
+    }
+    if (userModalMode === 'add') {
+      const created = addUser(formData);
+      refreshUsers();
+      setUserModalMode(null);
+      setUserModalInitial(null);
+      // If we got here from the ImportUserModal "Create new user" path,
+      // the newly-created user is the intended attribution target.
+      if (pendingImport) {
+        const { shots: newShots, sessionLabel } = pendingImport;
+        setPendingImport(null);
+        await commitImport(newShots, sessionLabel, created.id);
+      }
+    }
+  }
+
+  function handleSelectUser(id) {
+    setActiveUserId(id);
+    refreshUsers();
+  }
+
+  function handleEditUser(id) {
+    const u = users.find((x) => x.id === id);
+    if (!u) return;
+    setUserModalInitial(u);
+    setUserModalMode('edit');
+  }
+
+  function handleDeleteUserConfirmed(id) {
+    if (!confirm(`Delete this user? Their shots stay in the database but become unattributed.`)) return;
+    deleteUser(id);
+    refreshUsers();
+  }
+
+  function handleAddUserFromSettings() {
+    setUserModalInitial(null);
+    setUserModalMode('add');
+  }
+
   async function handleDeleteShot(id) {
     await deleteShot(id);
     setShots((curr) => curr.filter((s) => s.id !== id));
@@ -280,7 +432,54 @@ export default function App() {
         totalSessions={totalSessions}
         totalShots={totalShots}
         lastSessionDate={lastSessionDate}
+        activeUser={activeUser}
+        settingsOpen={showSettings}
+        onOpenSettings={() => setShowSettings((v) => !v)}
       />
+
+      {showSettings && (
+        <SettingsPanel
+          users={users}
+          activeUserId={activeUserId}
+          onSelectUser={handleSelectUser}
+          onEditUser={handleEditUser}
+          onAddUser={handleAddUserFromSettings}
+          onDeleteUser={handleDeleteUserConfirmed}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showFirstLaunch && (
+        <UserModal
+          mode="firstLaunch"
+          onSubmit={handleUserSubmit}
+        />
+      )}
+
+      {userModalMode && (
+        <UserModal
+          mode={userModalMode}
+          initial={userModalInitial}
+          onSubmit={handleUserSubmit}
+          onCancel={() => {
+            setUserModalMode(null);
+            setUserModalInitial(null);
+          }}
+        />
+      )}
+
+      {pendingImport && (
+        <ImportUserModal
+          users={users}
+          activeUserId={activeUserId}
+          fileName={pendingImport.fileName}
+          onResolve={handleImportUserResolution}
+          onCancel={() => {
+            setPendingImport(null);
+            setImportStatus(null);
+          }}
+        />
+      )}
 
       <main className="main">
         {loading ? (

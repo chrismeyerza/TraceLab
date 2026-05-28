@@ -907,6 +907,247 @@
   }
   .club-chip-edit:hover .club-chip-edit-pencil { opacity: 1; }
 
+  /* MODAL OVERLAY (used by UserModal, ImportUserModal) ---------------- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-card {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+  .modal-header {
+    padding: 18px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title {
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-strong);
+    margin-bottom: 4px;
+  }
+  .modal-subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .modal-body {
+    padding: 16px 20px;
+  }
+  .modal-footer {
+    padding: 12px 20px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .form-row {
+    display: block;
+    margin-bottom: 14px;
+  }
+  .form-row:last-child { margin-bottom: 0; }
+  .form-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+  }
+  .form-input {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  .form-input:focus {
+    outline: none;
+    border-color: var(--green);
+  }
+
+  /* SETTINGS PANEL (gear popover) ------------------------------------ */
+  .settings-panel {
+    position: absolute;
+    top: 56px;
+    right: 16px;
+    width: 320px;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    z-index: 50;
+  }
+  .settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-strong);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  .settings-close {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  .settings-close:hover { color: var(--text); }
+  .settings-section { padding: 12px 14px; }
+  .settings-section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 10px;
+  }
+  .settings-user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .settings-user-row {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    transition: border-color 0.12s;
+  }
+  .settings-user-row:hover { border-color: var(--border-strong); }
+  .settings-user-row.active { border-color: var(--green); }
+  .settings-user-main {
+    flex: 1;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 10px 12px;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .settings-user-main:hover { background: var(--bg-elev-3); }
+  .settings-user-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+  .settings-user-dot {
+    color: var(--green);
+    margin-right: 6px;
+  }
+  .settings-user-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+    margin-top: 3px;
+  }
+  .settings-user-actions {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+  }
+  .settings-user-action {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0 10px;
+    font-size: 14px;
+    transition: all 0.12s;
+  }
+  .settings-user-action:hover { background: var(--bg-elev-3); color: var(--text); }
+  .settings-user-action.danger:hover { color: var(--red); }
+
+  /* GEAR BUTTON ------------------------------------------------------ */
+  .gear-btn {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s;
+  }
+  .gear-btn:hover {
+    color: var(--text);
+    border-color: var(--green);
+  }
+  .gear-btn.active {
+    color: var(--green);
+    border-color: var(--green);
+    background: rgba(74,222,128,0.06);
+  }
+  .gear-active-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    margin-right: 8px;
+    text-transform: uppercase;
+  }
+
+  .btn-primary {
+    padding: 7px 16px;
+    background: var(--green);
+    color: var(--bg);
+    border: 1px solid var(--green);
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   /* FOOTER */
   .footer {
     margin-top: 40px;
