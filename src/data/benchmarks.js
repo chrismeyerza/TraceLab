@@ -77,27 +77,61 @@ export function getWindow(club) {
 /**
  * Strike tolerance bands. Distance from face centre in mm — euclidean (combined
  * horizontal + vertical). Bands are interpreted as upper bounds:
- *   distance <= centred -> "Centred" (pure)
- *   distance <= near    -> "Near centre" (good)
- *   distance <= off     -> "Off centre" (acceptable)
- *   distance >  off     -> "Miss" (poor)
+/**
+ * Strike classification — H/V band model (v1.5, May 2026).
  *
- * `pctOfCentred` in classifyStrike() expresses distance as a multiple of the
- * centred-zone radius — so 1.0× = exactly at the edge of the centred zone;
- * 2.0× = twice as far out. We deliberately use the centred-zone boundary (not
- * the face size) as the reference because what matters is energy transfer, not
- * whether you hit the face at all.
+ * Previous model (radius-only) collapsed two distinct quality dimensions —
+ * horizontal centredness and vertical centredness — into a single distance
+ * from the geometric face centre. That hid a real coaching insight: for
+ * irons, vertical strike location and horizontal strike location affect
+ * outcomes in very different ways:
  *
- * Values reflect typical published club-fitter data plus accepted coaching
- * benchmarks. Drivers have larger sweet spots due to face size, MOI design,
- * and trampoline effect; irons and wedges have small, demanding sweet zones.
+ *   Horizontal misses (toe / heel) lose energy via gear effect and direct
+ *   energy loss → reduced smash factor, reduced carry.
+ *
+ *   Vertical misses are NOT symmetric:
+ *     - HIGH face: adds dynamic loft, lowers ball speed, often weaker carry
+ *     - LOW face:  reduces dynamic loft, RAISES ball speed (this is why
+ *                  iron designers move CoG forward and low — a low-on-face
+ *                  strike often produces the player's best ball speed).
+ *
+ * So a player can have a 7-iron pattern where their "best" strikes are
+ * actually slightly low on the face, and an old radius-only classifier
+ * would call those "off-centre" while calling a high-face mishit
+ * "centred". That's misleading, both for the strike score and for any
+ * downstream cohort (the Distance view's Smart vs Centred carry).
+ *
+ * The new model uses two independent thresholds:
+ *
+ *   |faceH| ≤ HORIZ → horizontally tight
+ *   |faceH| >  HORIZ → horizontally wide ("toe/heel")
+ *   |faceV| ≤ VERT  → vertically mid
+ *   faceV  >  VERT  → vertically high
+ *   faceV  < -VERT  → vertically low
+ *
+ * Combined into four meaningful bands:
+ *
+ *   CENTRED   = H tight + V mid          (the textbook good strike)
+ *   HIGH      = V high  (any H)          (the loft-adding miss)
+ *   LOW       = V low + H tight          (the surprisingly-good iron miss)
+ *   HEEL_TOE  = H wide + V mid-or-low    (the gear-effect miss)
+ *
+ * HIGH takes precedence over horizontal: a high-and-toe strike is dominated
+ * by the vertical (it's lofted up regardless), so it's a HIGH not a HEEL_TOE.
+ * This is asymmetric because the LOW strike at a horizontal extreme is
+ * already a heel/toe of a low-face strike — net effect dominated by the
+ * horizontal miss — so we call those HEEL_TOE.
+ *
+ * Thresholds default to ±10mm horizontal and ±4mm vertical for irons, which
+ * are widely-cited Foresight reference values. Drivers get wider bands
+ * (bigger face, larger sweet spot). Wedges match irons for now.
  */
-const STRIKE_BANDS = {
-  driver:  { centred: 12, near: 22, off: 35 },
-  wood:    { centred: 10, near: 18, off: 28 },
-  hybrid:  { centred: 9,  near: 16, off: 25 },
-  iron:    { centred: 8,  near: 15, off: 25 },
-  wedge:   { centred: 8,  near: 14, off: 22 },
+const STRIKE_HV_BANDS = {
+  driver:  { horiz: 14, vert: 6 },
+  wood:    { horiz: 12, vert: 5 },
+  hybrid:  { horiz: 11, vert: 5 },
+  iron:    { horiz: 10, vert: 4 },
+  wedge:   { horiz: 10, vert: 4 },
 };
 
 function clubCategory(club) {
@@ -113,29 +147,74 @@ function clubCategory(club) {
 }
 
 /**
- * Classify a face-impact distance for a given club.
- * Returns {band, distMm, pctOfCentred} where:
- *   band: 'centred' | 'near' | 'off' | 'miss'
- *   distMm: euclidean distance from centre, mm
- *   pctOfCentred: distance relative to the centred-zone radius (1.0 = at edge)
+ * Classify a face-impact (H, V) for a given club using the four-band model.
+ *
+ * Returns null if either coordinate is missing.
+ * Returns an object compatible with the previous radius-based shape so
+ * existing call sites that read `.band` and `.distMm` still work — but with
+ * the new band values: 'centred' | 'high' | 'low' | 'heel-toe'.
+ *
+ * `pctOfCentred` is preserved for back-compat (some UI heat-mapping uses it)
+ * — it's computed as the radial distance relative to the centred-zone
+ * boundary (treating the centred zone as an ellipse with horiz and vert
+ * semi-axes). So a strike right at the edge of the centred ellipse gives
+ * 1.0; well outside gives >1.
  */
 export function classifyStrike(club, faceImpactH, faceImpactV) {
   if (faceImpactH == null || faceImpactV == null) return null;
-  const dist = Math.sqrt(faceImpactH * faceImpactH + faceImpactV * faceImpactV);
-  const bands = STRIKE_BANDS[clubCategory(club)];
+  const bands = STRIKE_HV_BANDS[clubCategory(club)];
+  const absH = Math.abs(faceImpactH);
+  const absV = Math.abs(faceImpactV);
+
   let band;
-  if (dist <= bands.centred) band = 'centred';
-  else if (dist <= bands.near) band = 'near';
-  else if (dist <= bands.off) band = 'off';
-  else band = 'miss';
+  if (faceImpactV > bands.vert) {
+    // Vertically high — this is the strike profile that adds dynamic loft and
+    // reduces ball speed. Owns the high cell regardless of horizontal position.
+    band = 'high';
+  } else if (absH > bands.horiz) {
+    // Horizontally wide AND not high — heel/toe miss
+    band = 'heel-toe';
+  } else if (faceImpactV < -bands.vert) {
+    // Low + horizontally tight — the often-strong iron strike
+    band = 'low';
+  } else {
+    band = 'centred';
+  }
+
+  // Ellipse-distance: how far OUT of the centred zone (which is a horiz/vert
+  // box, but we approximate as ellipse for the existing radial heat-map
+  // semantics). 1.0 = exactly on the centred boundary; 2.0 = twice as far.
+  const ellipseDist = Math.sqrt(
+    (faceImpactH / bands.horiz) ** 2 + (faceImpactV / bands.vert) ** 2
+  );
+  const distMm = Math.sqrt(faceImpactH * faceImpactH + faceImpactV * faceImpactV);
   return {
     band,
-    distMm: dist,
-    pctOfCentred: dist / bands.centred,
+    distMm,
+    pctOfCentred: ellipseDist,
   };
 }
 
-/** Look up the raw tolerance bands for a club. Useful for showing the explainer. */
+/**
+ * Look up the H/V band thresholds for a club. Returns { horiz, vert } in mm.
+ * Used by the Strike view to draw the centred ellipse and the high/low cells.
+ */
 export function getStrikeBands(club) {
-  return STRIKE_BANDS[clubCategory(club)];
+  return STRIKE_HV_BANDS[clubCategory(club)];
+}
+
+/**
+ * Display label for a band. Kept in one place so any UI rendering bands
+ * uses consistent capitalisation and wording.
+ */
+export function strikeBandLabel(band) {
+  return {
+    'centred':  'Centred',
+    'high':     'High',
+    'low':      'Low',
+    'heel-toe': 'Heel/Toe',
+    'miss':     'Miss',   // legacy fallback (shouldn't appear with new bands)
+    'near':     'Near',   // legacy fallback
+    'off':      'Off',    // legacy fallback
+  }[band] || band;
 }
