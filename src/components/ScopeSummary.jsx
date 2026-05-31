@@ -11,17 +11,21 @@ export default function ScopeSummary({
   shotsShown, totalShots,
   selectedClubs, allClubs,
   timeFilter, pinnedSession,
-  selectedTypes, showTypes,
+  selectedTypes, showTypes, availableTypes,
 }) {
   const isFilteringClubs = selectedClubs && allClubs && selectedClubs.length !== allClubs.length;
   const isFilteringTime = timeFilter && timeFilter !== 'all';
   const isPinned = !!pinnedSession;
-  // Type filter counts as active when it's narrowing to something other than
-  // "everything". The default full-only state is the baseline, but when shot
-  // types exist in the data, even "full only" is worth showing so the user
-  // knows non-full shots are being excluded.
-  const isFilteringTypes = showTypes && selectedTypes &&
-    !(selectedTypes.length > 1 && selectedTypes.includes('full'));
+  // Type filter counts as "active" when there's actually something to
+  // narrow — i.e. either non-full shots exist (so "Full only" is genuinely
+  // excluding things), or the user has changed the selection from the
+  // default. When the entire dataset is Full and the filter is just on
+  // Full, that's the baseline and we don't show a redundant chip.
+  const hasNonFull = availableTypes && availableTypes.some((t) => t !== 'full');
+  const isOnlyFullSelected = selectedTypes && selectedTypes.length === 1 && selectedTypes[0] === 'full';
+  const isFilteringTypes = showTypes && selectedTypes && (
+    !isOnlyFullSelected || hasNonFull
+  );
   const anyFilter = isFilteringClubs || isFilteringTime || isPinned || isFilteringTypes;
 
   // No filters active — keep it quiet. The shot count is visible in the page

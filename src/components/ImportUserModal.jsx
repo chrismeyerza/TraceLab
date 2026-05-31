@@ -24,12 +24,12 @@ export default function ImportUserModal({ users, activeUserId, fileName, onResol
         <div className="modal-header">
           <div className="modal-title">Whose shots are these?</div>
           <div className="modal-subtitle">
-            Importing <strong style={{ color: 'var(--text-strong)' }}>{fileName}</strong>. Attribute these shots to a user.
+            Importing <strong style={{ color: 'var(--text-strong)' }}>{fileName}</strong>. Attribute these shots to a player.
           </div>
         </div>
         <div className="modal-body">
           <div className="form-row">
-            <div className="form-label">Existing users</div>
+            <div className="form-label">Existing players</div>
             <div className="settings-user-list" style={{ maxHeight: 220, overflowY: 'auto' }}>
               {users.map((u) => (
                 <button
@@ -66,7 +66,7 @@ export default function ImportUserModal({ users, activeUserId, fileName, onResol
             className="btn-secondary"
             onClick={() => onResolve({ kind: 'createNew' })}
           >
-            + Create new user
+            + Create new player
           </button>
           <button
             className="btn-primary"

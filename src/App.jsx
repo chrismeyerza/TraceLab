@@ -126,14 +126,17 @@ export default function App() {
 
   const allClubs = useMemo(() => orderedClubs([...new Set(shots.map((s) => s.club))]), [shots]);
 
-  // Distinct shot types present in the data. Used to decide whether to show
-  // the TYPES filter row at all — no point showing it when everything is
-  // 'full' (the common case), as it'd just be noise.
+  // Distinct shot types present in the data. The TYPES filter row is shown
+  // whenever there are any shots — even with only Full shots, we display the
+  // row with just the Full chip so the user can SEE that the default
+  // analysis filter is "Full only" rather than discovering it implicitly.
+  // (Earlier we hid the row when all shots were Full; that made the
+  // auto-filtering invisible. Honest UI surfaces the filter.)
   const availableTypes = useMemo(() => {
     const set = new Set(shots.map((s) => s.shotType || 'full'));
     return [...set];
   }, [shots]);
-  const hasNonFullTypes = availableTypes.some((t) => t !== 'full');
+  const showTypes = shots.length > 0;
 
   // Default-select every club when data first loads. Also reset when the
   // underlying club set changes (e.g. after a bulk relabel that introduces
@@ -204,6 +207,20 @@ export default function App() {
       return true;
     });
   }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedTypes]);
+
+  // The Shots view is a DATA EDITOR, not an analysis surface. It must show
+  // every shot in the club/time/session scope regardless of shot-type, so the
+  // user can SEE and tag shots. Applying the type filter here caused a
+  // confusing bug: reclassifying a shot to a non-selected type made it vanish
+  // (looked like the edit "didn't stick"). So Shots gets everything-but-type.
+  const shotsForEditing = useMemo(() => {
+    return shots.filter((s) => {
+      if (selectedClubs.length && !selectedClubs.includes(s.club)) return false;
+      if (pinnedSession && s.sessionId !== pinnedSession.id) return false;
+      if (!inTimeWindow(s, newestSessionIds)) return false;
+      return true;
+    });
+  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds]);
 
   /**
    * Step 1 of import: parse the file and pause. We don't write to storage
@@ -527,7 +544,7 @@ export default function App() {
                   setTimeFilter={setTimeFilter}
                   pinnedSession={pinnedSession}
                   setPinnedSession={setPinnedSession}
-                  showTypes={hasNonFullTypes}
+                  showTypes={showTypes}
                   availableTypes={availableTypes}
                   selectedTypes={selectedTypes}
                   setSelectedTypes={setSelectedTypes}
@@ -540,7 +557,8 @@ export default function App() {
                   timeFilter={timeFilter}
                   pinnedSession={pinnedSession}
                   selectedTypes={selectedTypes}
-                  showTypes={hasNonFullTypes}
+                  showTypes={showTypes}
+                  availableTypes={availableTypes}
                 />
               </>
             )}
@@ -553,7 +571,7 @@ export default function App() {
             {view === 'shape' && <ShapeView shots={filteredShots} rightHanded={rightHanded} />}
             {view === 'shots' && (
               <ShotsView
-                shots={filteredShots}
+                shots={shotsForEditing}
                 units={units}
                 allClubs={allClubs}
                 users={users}

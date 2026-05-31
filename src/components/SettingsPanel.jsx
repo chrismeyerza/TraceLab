@@ -38,7 +38,7 @@ export default function SettingsPanel({
         <button className="settings-close" onClick={onClose}>×</button>
       </div>
       <div className="settings-section">
-        <div className="settings-section-title">Users</div>
+        <div className="settings-section-title">Players</div>
         <div className="settings-user-list">
           {users.map((u) => {
             const active = u.id === activeUserId;
@@ -47,7 +47,7 @@ export default function SettingsPanel({
                 <button
                   className="settings-user-main"
                   onClick={() => onSelectUser(u.id)}
-                  title={active ? 'Active user' : 'Switch to this user'}
+                  title={active ? 'Active player' : 'Switch to this player'}
                 >
                   <div className="settings-user-name">
                     {active && <span className="settings-user-dot">●</span>}
@@ -63,7 +63,7 @@ export default function SettingsPanel({
                   <button
                     className="settings-user-action"
                     onClick={() => onEditUser(u.id)}
-                    title="Edit user"
+                    title="Edit player"
                   >
                     ✎
                   </button>
@@ -71,7 +71,7 @@ export default function SettingsPanel({
                     <button
                       className="settings-user-action danger"
                       onClick={() => onDeleteUser(u.id)}
-                      title="Delete user (does not delete their shots)"
+                      title="Delete player (does not delete their shots)"
                     >
                       ×
                     </button>
@@ -82,7 +82,7 @@ export default function SettingsPanel({
           })}
         </div>
         <button className="btn-secondary" onClick={onAddUser} style={{ marginTop: 10, width: '100%' }}>
-          + Add user
+          + Add player
         </button>
       </div>
     </div>

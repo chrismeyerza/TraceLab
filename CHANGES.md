@@ -1,108 +1,140 @@
-# Changes — Shot-type tagging + equipment capture (PR 4.13)
+# Changes — Bug fixes, player rename, filter visibility (PR 4.13.1)
 
-Two new per-shot fields. Shot-type is fully wired (tag, filter, analysis-aware).
-Equipment is stop-gap capture only (tag + display, no filter/analysis yet) —
-the proper equipment system is deferred until you've thought through the
-workflow.
+Six fixes in response to PR 4.13 feedback. Bumps app version to **1.4.0**
+and switches version display to read from package.json so we never have
+to update it in two places again.
 
-## Shot type (full treatment)
+## 1. Scatter Y-axis flipped to match ball flight
 
-### The problem
-A 50° wedge hit full (~90y), as a pitch (~50y), and as a chip (~25y) is the
-same club doing three different jobs. Aggregated together, the club looks
-wildly inconsistent. Foresight doesn't distinguish them — so we capture intent
-separately.
+The Face vs Path scatter previously had positive face-to-target at the
+TOP (standard math orientation). Visually this meant a draw curved
+*down-and-left* and a fade *up-and-right* — backwards from how a player
+sees ball flight.
 
-### What's in place
-- **New `shotType` field** on every shot. Enum: Full · 3/4 · Half · Pitch ·
-  Chip · Bunker · Flop · Other. Defaults to `full` on import.
-- **Analysis defaults to full-only.** The app-level shot filter defaults to
-  `['full']`, so Distance / Strike / Flight / Shape / Overview all show full
-  shots only out of the box — baselines stay clean. No per-view changes
-  needed; it's enforced at the `filteredShots` level.
-- **TYPES filter row** in the FilterBar. Same focus/additive interaction as
-  clubs (plain click focuses, Cmd/Ctrl-click toggles). **Hidden until the
-  data actually contains non-full shots** — no noise when everything's full.
-- **Scope summary shows the type filter** (purple chip) so you always know
-  when non-full shots are excluded or when you've narrowed to a type.
-- **Migration** backfills `shotType: 'full'` on all existing shots
-  (idempotent, runs once on boot).
+**Fix:** Y axis inverted so closed face / draw is at the TOP and open
+face / fade is at the BOTTOM. Now a draw curves *up-and-left* and a
+fade *down-and-right* — matching the visual story. Corner labels
+(DRAW/HOOK, FADE/SLICE) swapped to match. Labels and dots use the same
+yToPx function so they stay perfectly consistent.
 
-### Tagging
-- **Bulk**: select shots in the Shots view → "Set type" → pick from the chip
-  grid. This is the main path (you tag a range of pitches from a session).
-- **Inline**: click the TYPE cell on any row in the Summary tab → per-shot
-  picker.
+## 2. Reclassify-didn't-stick bug fixed
 
-## Equipment (stop-gap capture)
+The bug: tagging a shot as anything other than "Full" in the Shots view
+made it vanish from the table, looking like the edit had silently
+failed. The data was actually changing — but the default `selectedTypes
+= ['full']` filter immediately hid the now-pitch shot.
 
-### What's in place
-- **New `equipment` field**. Null = untagged. Stores strings like
-  "Titleist T150", "Ping i230", or bare "Mizuno".
-- **Fixed brand→model picker** — a curated, hardcoded taxonomy (see
-  `data/equipment.js`): 8 brands (Titleist, Ping, Mizuno, Callaway,
-  TaylorMade, Srixon, Cobra, Wilson), up to 4 representative current iron
-  models each, compiled from public 2024-2026 lineup data. Two-step pick:
-  brand → model (or bare brand, or "Clear tag").
-- **Shown in the Summary tab** EQUIP column.
-- **Bulk + inline tagging**, same pattern as shot type.
+**Root cause:** the Shots view was receiving `filteredShots` (which
+includes the shot-type filter), but it's a data EDITOR, not an analysis
+view. You need to see all your shots to tag them.
 
-### What's deliberately NOT here
-- **No free text.** The fixed list means no typo-fragmentation, but also no
-  arbitrary names yet. That's the deferred "proper" version.
-- **No equipment filter.** Captured and visible only. Filtering comes with
-  the proper system once you've decided how you want to use it.
-- **No analysis effect.** Equipment doesn't change any view's numbers yet.
+**Fix:** A new `shotsForEditing` memo applies club / time / session
+filters but NOT the shot-type filter. The Shots view now uses that, so
+reclassifying a 54° to Pitch keeps the row visible (just showing
+"Pitch" in the Type column).
 
-The fixed brand list is explicitly a stop-gap so equipment can be captured
-now without committing to the full design.
+## 3. Equipment picker now shows current selection
 
-## Summary tab is now wider
+The bug: opening the picker for a shot already tagged with (say)
+"Mizuno JPX 925" didn't show that anywhere — you'd have to click
+through brands to find what was assigned.
 
-The Summary tab columns are now: When · User · Type · Equip · Ball Spd ·
-Smash · Carry · Total · F→P. It's the scan tab, so the extra width is
-acceptable; Ball and Club tabs are unchanged.
+**Fix:**
+- The picker now **opens straight to the current brand's model list**
+  if a tag exists
+- The current brand and model are **highlighted in green with a ✓**
+  so the assignment is obvious at a glance
+- When you reopen, you immediately see what's there
+
+## 4. "User" → "Player" throughout visible UI
+
+Renamed in all user-facing strings:
+- Shots view column header: USER → **PLAYER**
+- Settings panel: "Users" → "**Players**", "Add user" → "**Add player**"
+- User modal: "Edit user" → "**Edit player**", "Create user" → "**Create player**"
+- Import modal: "Existing users" → "**Existing players**", "Attribute these
+  shots to a user" → "**...to a player**", "Create new user" → "**Create
+  new player**"
+- TopBar gear tooltip: "Active user" → "**Active player**"
+- Welcome subtitle: "add more users any time" → "**add more players any time**"
+
+Internal field name stays `userId` — no data migration needed, just a
+visible rename.
+
+## 5. TYPES filter row now always visible (when shots exist)
+
+The previous behaviour hid the TYPES row until non-full shots existed in
+the data. Your point: if we're silently defaulting to "Full only" for
+analysis, the user should SEE that filter is engaged.
+
+**Fix:** TYPES row appears whenever there are any shots. With only Full
+shots in the data, you see a single "Full" chip with "ALL" — making
+the default explicit. Once you tag a pitch, additional chips appear
+automatically.
+
+The ScopeSummary scope chip behaviour is now smarter:
+- When the data is **only Full** and the filter is on **Full**: no chip
+  shown (that's the baseline, not "filtering")
+- When non-Full shots **exist** and filter is **Full only**: chip
+  appears (you're genuinely excluding non-full shots — worth surfacing)
+- When the user has **manually narrowed** the type selection: chip
+  appears
+
+## 6. Version auto-reads from package.json
+
+Previously the TopBar showed a hardcoded "v1.3" string that I had to
+remember to update separately from package.json. Now it imports
+`package.json` directly and displays `v${pkg.version.split('.').slice(0,2).join('.')}` —
+so the brand strip auto-tracks the actual project version. Single source
+of truth.
+
+This batch bumps **package.json from 1.2.0 to 1.4.0**, so the app will
+display **v1.4**.
+
+(Going forward: every PR I send bumps the version in package.json. You
+never edit it. The display updates automatically.)
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/data/shotTypes.js` | **NEW** — shot type enum + label helper |
-| `src/data/equipment.js` | **NEW** — curated brand/model taxonomy |
-| `src/lib/parser.js` | Defaults `shotType: 'full'` and `equipment: null` on import |
-| `src/lib/storage.js` | New `migrateShotMeta()` backfill migration |
-| `src/App.jsx` | `selectedTypes` filter state (default full); shot-type filtering in filteredShots; availableTypes detection; runs migrateShotMeta on boot |
-| `src/components/FilterBar.jsx` | TYPES filter row (hidden until non-full exists); type focus/additive click logic; clearAll resets types |
-| `src/components/ScopeSummary.jsx` | Shows type filter as a purple chip |
-| `src/views/ShotsView.jsx` | TYPE + EQUIP columns on Summary tab; bulk Set type / Set equipment actions; inline cell editing; TypePicker + EquipmentPicker components |
-| `src/index.css` | tone-type scope chip colour |
+| `package.json` | Version bumped to 1.4.0 |
+| `src/components/TopBar.jsx` | Imports package.json; version display reads from it; tooltip "Active user" → "Active player" |
+| `src/components/SettingsPanel.jsx` | "Users" → "Players" labels |
+| `src/components/UserModal.jsx` | Title/button text uses "player"; welcome subtitle uses "players" |
+| `src/components/ImportUserModal.jsx` | Visible strings use "player" |
+| `src/components/ScopeSummary.jsx` | Smarter `isFilteringTypes` logic; accepts `availableTypes` prop |
+| `src/views/ShapeView.jsx` | Y axis flipped; corner labels swapped |
+| `src/views/ShotsView.jsx` | "USER" column label → "PLAYER"; EquipmentPicker opens to current brand + highlights current model |
+| `src/App.jsx` | New `shotsForEditing` memo (no type filter for Shots view); TYPES row always visible (`showTypes = shots.length > 0`); passes `availableTypes` to ScopeSummary |
 
 ## Verified
 
 - Production build clean
-- Shot type + equipment data modules smoke-tested: labels resolve, unknown
-  equipment rejected, 37 equipment options across 8 brands
-- Migration idempotent (meta-flag guarded)
-- Export/import (PR 4.11) carries the new fields automatically (preserves all
-  shot fields); legacy backups import then get migrated on boot
+- Version 1.4.0 baked into the bundle
+- TopBar will display "v1.4"
 
-## How you'll use it
+## Answers to the open questions
 
-After applying, a wedge session workflow:
+- **"How else is brand used?"** — Right now, nowhere. Stop-gap capture
+  only by explicit decision. Shows in the EQUIP column, that's it. The
+  proper equipment system (filtering + analysis) is the deferred work
+  for when you've thought through the workflow.
 
-1. Import the session (all shots default to Full)
-2. Go to Shots → Summary tab
-3. Select the pitch shots (checkboxes)
-4. "Set type" → Pitch
-5. Now your Distance/Strike/etc views show only full shots by default; your
-   50° full carry is clean. Switch the TYPES filter to Pitch to analyse
-   pitches separately.
+- **"Off-centre carries further than centre on 7i 28/5"** — Genuine
+  small-sample / strike-quality vs swing-speed effect, not a bug in the
+  cohort logic. Investigating it properly requires uploading the 28/5
+  data so I can see the actual shots — deferred per your call.
 
-For equipment, same flow with "Set equipment" → pick brand → model. It'll
-show in the EQUIP column but won't filter anything yet.
+- **"Smash factor on 7i 28/5 lower for centred than near/off"** —
+  Genuinely interesting catch. Possible causes range from real club
+  physics (gear effect from high-face strikes) to a strike
+  classification miscalibration. Needs your data to investigate
+  properly — deferred until upload.
 
-## What's next
+## Backlog
 
-- The **proper equipment system** when you've thought it through (free text +
-  autocomplete, or user-managed bags, plus filtering + analysis integration)
-- **PR 4.14** — per-club swing fingerprint view
+Per your instruction, **column reordering in Shots view** is parked on
+the backlog. Other deferred items: smash-factor investigation (needs
+data), off-centre-carries-further note, proper equipment system,
+PR 4.14 per-club swing fingerprint view.
