@@ -55,7 +55,7 @@ export default function StrikeView({ shots, units }) {
           <div className="card-title">
             <span className="num">03</span>Per-club strike pattern
           </div>
-          <div className="card-subtitle">Centroid + 1σ ellipse · green / amber / red zones show centred / near / off-centre tolerance</div>
+          <div className="card-subtitle">Centroid + 1σ ellipse · green = centred · amber = high/low face · red = heel/toe</div>
         </div>
         <StrikePerClub shots={strikeShots} units={units} />
       </div>
@@ -120,9 +120,19 @@ function SinglePlot({ shots, club, units }) {
   // Per-shot classifications, used for the count summary below
   const classified = shots.map((s) => classifyStrike(club, s.faceImpactH, s.faceImpactV));
   const bandCount = (b) => classified.filter((c) => c && c.band === b).length;
-  // Helper: convert a mm radius to SVG units (x and y scales are different)
-  const radPxX = (r) => xToPx(r) - xToPx(0);
-  const radPxY = (r) => yToPx(0) - yToPx(r);
+
+  // Pre-compute the four zones as pixel rectangles. The centred zone is the
+  // tight inner box defined by horiz/vert thresholds; everything outside the
+  // horizontal threshold (with V mid-or-low) is heel/toe; everything above
+  // vert is high; everything below -vert (with H tight) is low.
+  const xL = xToPx(-bands.horiz);
+  const xR = xToPx(bands.horiz);
+  const yT = yToPx(bands.vert);     // top of centred zone (positive V = up)
+  const yB = yToPx(-bands.vert);    // bottom of centred zone
+  const xMin = xToPx(xRange[0]);
+  const xMax = xToPx(xRange[1]);
+  const yMax = yToPx(yRange[1]);    // top of canvas
+  const yMin = yToPx(yRange[0]);    // bottom of canvas
   return (
     <>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
@@ -139,30 +149,46 @@ function SinglePlot({ shots, club, units }) {
           rx="3"
         />
         {/*
-          Tolerance zones, drawn as concentric ellipses stacked largest-first
-          so the fills layer into annular bands. Outside the red boundary = miss
-          (no fill, emphasised by absence). The fills are deliberately muted so
-          the data dots remain the visual focus.
+          H/V zones drawn as rectangles. Stacking order: outer bands first
+          (heel/toe red, high/low amber), then the centred green rectangle on
+          top so its boundary reads cleanly. Fills are muted; data dots are
+          the visual focus.
         */}
-        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.off)} ry={radPxY(bands.off)}
-          fill="rgba(239,68,68,0.08)" stroke="rgba(239,68,68,0.35)" strokeWidth="0.6" />
-        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.near)} ry={radPxY(bands.near)}
-          fill="rgba(251,191,36,0.10)" stroke="rgba(251,191,36,0.45)" strokeWidth="0.6" />
-        <ellipse cx={xToPx(0)} cy={yToPx(0)} rx={radPxX(bands.centred)} ry={radPxY(bands.centred)}
-          fill="rgba(74,222,128,0.14)" stroke="rgba(74,222,128,0.55)" strokeWidth="0.8" />
+        {/* Heel/toe — left and right of the centred-horiz strip */}
+        <rect x={xMin}      y={yMax} width={xL - xMin}   height={yMin - yMax} fill="rgba(239,68,68,0.06)" />
+        <rect x={xR}        y={yMax} width={xMax - xR}   height={yMin - yMax} fill="rgba(239,68,68,0.06)" />
+        {/* High band — above centred-vert, within horizontal tight */}
+        <rect x={xL} y={yMax} width={xR - xL} height={yT - yMax} fill="rgba(251,191,36,0.08)" />
+        {/* Low band — below centred-vert, within horizontal tight */}
+        <rect x={xL} y={yB}   width={xR - xL} height={yMin - yB}   fill="rgba(251,191,36,0.08)" />
+        {/* Centred — the inner tight rectangle */}
+        <rect
+          x={xL} y={yT} width={xR - xL} height={yB - yT}
+          fill="rgba(74,222,128,0.14)"
+          stroke="rgba(74,222,128,0.55)"
+          strokeWidth="0.8"
+        />
 
-        {/* Zone labels — positioned at the top edge of each band */}
-        <text x={xToPx(0)} y={yToPx(bands.centred) - 2} textAnchor="middle"
+        {/* Zone labels — placed at the top of each band */}
+        <text x={xToPx(0)} y={yT - 2} textAnchor="middle"
           style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(74,222,128,0.9)', letterSpacing: '0.05em' }}>
           CENTRED
         </text>
-        <text x={xToPx(0)} y={yToPx(bands.near) - 2} textAnchor="middle"
+        <text x={xToPx(0)} y={yMax + 8} textAnchor="middle"
           style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(251,191,36,0.9)', letterSpacing: '0.05em' }}>
-          NEAR
+          HIGH
         </text>
-        <text x={xToPx(0)} y={yToPx(bands.off) - 2} textAnchor="middle"
-          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(239,68,68,0.9)', letterSpacing: '0.05em' }}>
-          OFF
+        <text x={xToPx(0)} y={yMin - 3} textAnchor="middle"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(251,191,36,0.9)', letterSpacing: '0.05em' }}>
+          LOW
+        </text>
+        <text x={xMin + 12} y={yToPx(0) + 2} textAnchor="start"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(239,68,68,0.8)', letterSpacing: '0.05em' }}>
+          HEEL
+        </text>
+        <text x={xMax - 12} y={yToPx(0) + 2} textAnchor="end"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 7, fontWeight: 600, fill: 'rgba(239,68,68,0.8)', letterSpacing: '0.05em' }}>
+          TOE
         </text>
         {shots.length >= 3 && (
           <ellipse
@@ -203,8 +229,9 @@ function SinglePlot({ shots, club, units }) {
       </svg>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8, fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
         <span style={{ color: 'var(--green)' }}>● {bandCount('centred')} centred</span>
-        <span style={{ color: 'var(--amber)' }}>● {bandCount('near')} near</span>
-        <span style={{ color: 'var(--red)' }}>● {bandCount('off') + bandCount('miss')} off+</span>
+        <span style={{ color: 'var(--amber)' }}>● {bandCount('low')} low</span>
+        <span style={{ color: 'var(--amber)' }}>● {bandCount('high')} high</span>
+        <span style={{ color: 'var(--red)' }}>● {bandCount('heel-toe')} heel/toe</span>
       </div>
       {shots.length >= 3 && (
         <div style={{ textAlign: 'center', marginTop: 6, fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.05em', fontWeight: 500 }}>
@@ -227,8 +254,9 @@ function SinglePlot({ shots, club, units }) {
  */
 function StrikeZoneTable({ shots, units }) {
   // Per-club: average ball speed of the club's centred-band shots. Used as the
-  // benchmark for the speed-loss column. Falls back to "near" if a club has no
-  // centred strikes; falls back to all-shots if neither.
+  // benchmark for the carry-loss column. Falls back to "low" (often the strong
+  // strikes on irons) if a club has no centred strikes; falls back to all
+  // shots if neither cohort has any data.
   const centredBSByClub = {};
   const allClubs = [...new Set(shots.map((s) => s.club))];
   for (const c of allClubs) {
@@ -240,7 +268,7 @@ function StrikeZoneTable({ shots, units }) {
     const ref = centred.length >= 2 ? centred
       : cs.filter((s) => {
           const cl = classifyStrike(s.club, s.faceImpactH, s.faceImpactV);
-          return cl && (cl.band === 'centred' || cl.band === 'near');
+          return cl && (cl.band === 'centred' || cl.band === 'low');
         });
     centredBSByClub[c] = ref.length ? mean(ref.map((s) => s.ballSpeed)) : null;
   }
@@ -257,19 +285,19 @@ function StrikeZoneTable({ shots, units }) {
     centredCarryByClub[c] = ref.length ? mean(ref.map((s) => s.carry)) : null;
   }
 
-  const bands = ['centred', 'near', 'off', 'miss'];
+  const bands = ['centred', 'low', 'high', 'heel-toe'];
   const labelByBand = {
-    centred: 'CENTRED',
-    near:    'NEAR CENTRE',
-    off:     'OFF CENTRE',
-    miss:    'MISS',
+    centred:    'CENTRED',
+    low:        'LOW (low-face, H tight)',
+    high:       'HIGH (high-face)',
+    'heel-toe': 'HEEL/TOE',
   };
 
   // Bucket every shot into its band
-  const byBand = { centred: [], near: [], off: [], miss: [] };
+  const byBand = { centred: [], low: [], high: [], 'heel-toe': [] };
   for (const s of shots) {
     const cl = classifyStrike(s.club, s.faceImpactH, s.faceImpactV);
-    if (cl) byBand[cl.band].push(s);
+    if (cl && byBand[cl.band]) byBand[cl.band].push(s);
   }
 
   return (
@@ -358,9 +386,8 @@ function ToleranceReference() {
         <thead>
           <tr>
             <th>CLUB CATEGORY</th>
-            <th className="num">CENTRED ≤</th>
-            <th className="num">NEAR ≤</th>
-            <th className="num">OFF ≤</th>
+            <th className="num">HORIZONTAL ±</th>
+            <th className="num">VERTICAL ±</th>
           </tr>
         </thead>
         <tbody>
@@ -369,20 +396,22 @@ function ToleranceReference() {
             return (
               <tr key={c.key}>
                 <td>{c.label}</td>
-                <td className="num" style={{ color: 'var(--green)' }}>{b.centred} mm</td>
-                <td className="num" style={{ color: 'var(--amber)' }}>{b.near} mm</td>
-                <td className="num" style={{ color: 'var(--red)' }}>{b.off} mm</td>
+                <td className="num" style={{ color: 'var(--green)' }}>{b.horiz} mm</td>
+                <td className="num" style={{ color: 'var(--green)' }}>{b.vert} mm</td>
               </tr>
             );
           })}
         </tbody>
       </table>
       <div style={{ marginTop: 14, fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-        Distance is measured from the geometric centre of the face — combined toe-heel and low-high.{' '}
-        <span style={{ color: 'var(--green)', fontWeight: 600 }}>Centred</span> is the pure-energy-transfer zone where ball-speed loss is essentially zero.{' '}
-        <span style={{ color: 'var(--amber)', fontWeight: 600 }}>Near</span> shots typically cost 1-3% ball speed.{' '}
-        <span style={{ color: 'var(--red)', fontWeight: 600 }}>Off</span> shots cost 3-8% — that's 5-15 yards on a 7-iron.{' '}
-        Beyond that is a miss; expect bigger losses and worse dispersion.
+        Strike quality has two independent dimensions:{' '}
+        <span style={{ fontWeight: 600 }}>horizontal</span> (toe / heel — energy loss via gear effect) and{' '}
+        <span style={{ fontWeight: 600 }}>vertical</span> (high / low on face — changes dynamic loft and ball speed).
+        Strikes are classified into four bands:{' '}
+        <span style={{ color: 'var(--green)', fontWeight: 600 }}>Centred</span> (tight on both axes),{' '}
+        <span style={{ color: 'var(--amber)', fontWeight: 600 }}>Low</span> (vertically below centre but horizontally tight — often the best ball speed for irons),{' '}
+        <span style={{ color: 'var(--amber)', fontWeight: 600 }}>High</span> (high on face — adds dynamic loft, lowers smash), and{' '}
+        <span style={{ color: 'var(--red)', fontWeight: 600 }}>Heel/Toe</span> (horizontally wide — energy lost to gear effect).
       </div>
     </>
   );

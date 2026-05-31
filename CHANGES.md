@@ -1,140 +1,141 @@
-# Changes — Bug fixes, player rename, filter visibility (PR 4.13.1)
+# Changes — Strike classification rework: H/V model (PR 4.14)
 
-Six fixes in response to PR 4.13 feedback. Bumps app version to **1.4.0**
-and switches version display to read from package.json so we never have
-to update it in two places again.
+A genuine rethink of how we classify strike quality, based on the 28/5 7i
+anomaly you flagged. Version bumped to **1.5.0**.
 
-## 1. Scatter Y-axis flipped to match ball flight
+## The problem (recap)
 
-The Face vs Path scatter previously had positive face-to-target at the
-TOP (standard math orientation). Visually this meant a draw curved
-*down-and-left* and a fade *up-and-right* — backwards from how a player
-sees ball flight.
+Your 28/5 7i data showed centred shots with LOWER smash factor than
+near-centre and off-centre shots (1.30 vs 1.34 vs 1.33). At first glance
+this looks like a bug. It isn't — it's a model failure. The old
+classifier used a single distance from face centre (`sqrt(H² + V²)`),
+treating horizontal and vertical misses as equivalent.
 
-**Fix:** Y axis inverted so closed face / draw is at the TOP and open
-face / fade is at the BOTTOM. Now a draw curves *up-and-left* and a
-fade *down-and-right* — matching the visual story. Corner labels
-(DRAW/HOOK, FADE/SLICE) swapped to match. Labels and dots use the same
-yToPx function so they stay perfectly consistent.
+They're not. For irons:
 
-## 2. Reclassify-didn't-stick bug fixed
+- **Horizontal misses** (toe/heel) lose energy via gear effect → lower smash
+- **High-face strikes** add dynamic loft → lower ball speed, weaker carry
+- **Low-face strikes** REDUCE dynamic loft → HIGHER ball speed (this is why
+  iron designers move CoG forward and low: a low-on-face strike is often
+  the player's best smash)
 
-The bug: tagging a shot as anything other than "Full" in the Shots view
-made it vanish from the table, looking like the edit had silently
-failed. The data was actually changing — but the default `selectedTypes
-= ['full']` filter immediately hid the now-pitch shot.
+Your 7i "centred" cohort included two high-face strikes (one a disaster
+at 88y carry / 1.20 smash) which dragged the average down. Your "near"
+and "off" cohorts were dominated by low-face strikes — the genuinely
+strong ones. The old radius math hid this entirely.
 
-**Root cause:** the Shots view was receiving `filteredShots` (which
-includes the shot-type filter), but it's a data EDITOR, not an analysis
-view. You need to see all your shots to tag them.
+## The new model
 
-**Fix:** A new `shotsForEditing` memo applies club / time / session
-filters but NOT the shot-type filter. The Shots view now uses that, so
-reclassifying a 54° to Pitch keeps the row visible (just showing
-"Pitch" in the Type column).
+Two independent thresholds per club:
 
-## 3. Equipment picker now shows current selection
+```
+  |faceH| ≤ HORIZ → horizontally tight
+  |faceH| >  HORIZ → wide (toe/heel)
+  faceV  >  VERT  → high
+  -VERT ≤ faceV ≤ +VERT → mid
+  faceV  < -VERT  → low
+```
 
-The bug: opening the picker for a shot already tagged with (say)
-"Mizuno JPX 925" didn't show that anywhere — you'd have to click
-through brands to find what was assigned.
+Combined into **four bands**:
 
-**Fix:**
-- The picker now **opens straight to the current brand's model list**
-  if a tag exists
-- The current brand and model are **highlighted in green with a ✓**
-  so the assignment is obvious at a glance
-- When you reopen, you immediately see what's there
+| Band | Definition | What it means |
+|---|---|---|
+| **Centred** | H tight + V mid | The textbook good strike |
+| **High** | V high (any H) | Loft-adding miss, weakened ball speed |
+| **Low** | V low + H tight | Often the BEST iron strike (lower dynamic loft, more speed) |
+| **Heel/Toe** | H wide + V not high | Horizontal miss, gear-effect energy loss |
 
-## 4. "User" → "Player" throughout visible UI
+The bands aren't symmetric — that's deliberate. High-face dominates
+horizontal position (a high-toe strike is still lofted up); low+horizontal-wide
+gets classified as heel/toe because the horizontal miss is the bigger
+energy loss.
 
-Renamed in all user-facing strings:
-- Shots view column header: USER → **PLAYER**
-- Settings panel: "Users" → "**Players**", "Add user" → "**Add player**"
-- User modal: "Edit user" → "**Edit player**", "Create user" → "**Create player**"
-- Import modal: "Existing users" → "**Existing players**", "Attribute these
-  shots to a user" → "**...to a player**", "Create new user" → "**Create
-  new player**"
-- TopBar gear tooltip: "Active user" → "**Active player**"
-- Welcome subtitle: "add more users any time" → "**add more players any time**"
+## Thresholds
 
-Internal field name stays `userId` — no data migration needed, just a
-visible rename.
+Per-category bands (mm):
 
-## 5. TYPES filter row now always visible (when shots exist)
+| Category | Horizontal ± | Vertical ± |
+|---|---|---|
+| Driver | 14 | 6 |
+| Fairway wood | 12 | 5 |
+| Hybrid | 11 | 5 |
+| Iron | 10 | 4 |
+| Wedge | 10 | 4 |
 
-The previous behaviour hid the TYPES row until non-full shots existed in
-the data. Your point: if we're silently defaulting to "Full only" for
-analysis, the user should SEE that filter is engaged.
+These are widely-cited Foresight reference values. Easy to tune later.
 
-**Fix:** TYPES row appears whenever there are any shots. With only Full
-shots in the data, you see a single "Full" chip with "ALL" — making
-the default explicit. Once you tag a pitch, additional chips appear
-automatically.
+## Verified on your 28/5 7i data
 
-The ScopeSummary scope chip behaviour is now smarter:
-- When the data is **only Full** and the filter is on **Full**: no chip
-  shown (that's the baseline, not "filtering")
-- When non-Full shots **exist** and filter is **Full only**: chip
-  appears (you're genuinely excluding non-full shots — worth surfacing)
-- When the user has **manually narrowed** the type selection: chip
-  appears
+| Cohort | Old radius model | New H/V model |
+|---|---|---|
+| Centred | 5 shots, smash 1.31 | 4 shots, smash 1.30 |
+| (Low) | — | **8 shots, smash 1.37, carry 130.8y** |
+| (High) | — | 0 shots this session |
+| (Heel/Toe) | — | 11 shots, smash 1.30 |
 
-## 6. Version auto-reads from package.json
+The Low cohort is the real insight: **8 shots that are honestly your
+best 7-iron strikes**, hidden in the old model. They're horizontally tight
+and slightly below face centre — exactly the strike profile that produces
+maximum ball speed on a modern game-improvement iron.
 
-Previously the TopBar showed a hardcoded "v1.3" string that I had to
-remember to update separately from package.json. Now it imports
-`package.json` directly and displays `v${pkg.version.split('.').slice(0,2).join('.')}` —
-so the brand strip auto-tracks the actual project version. Single source
-of truth.
+## What changed where
 
-This batch bumps **package.json from 1.2.0 to 1.4.0**, so the app will
-display **v1.4**.
+### Strike view
+- Tolerance reference card now shows H/V band thresholds (not radii)
+- Per-club strike plots draw the four zones as **rectangles** (the centred
+  inner box, high band above, low band below, heel/toe bands at the sides)
+- Mini count summary under each plot shows centred / low / high / heel-toe
+- Strike Zone Table replaces the four-row band breakdown with the new
+  four bands. Adds "LOW (low-face, H tight)" labelling so the user knows
+  which is which.
 
-(Going forward: every PR I send bumps the version in package.json. You
-never edit it. The display updates automatically.)
+### Distance view
+- **"Smart" cohort now = Centred + Low** (was Centred + Near). Reflects
+  the new model's coaching insight that low-face strikes on irons are part
+  of the player's "good shots" set. Explanation text updated.
+
+### Overview view (Insights)
+- Strike pillar's "off-centre" insight now counts only heel/toe and high
+  shots. Low shots are excluded — they're not a problem to flag.
+- Gapping insight uses the same Centred + Low for Smart carry consistency
+  with the Distance view.
+
+### Shots view
+- **New STRIKE column** on the Club tab, next to the IMPACT H / IMPACT V
+  raw values. Shows the band classification per shot, coloured by category
+  (green centred, amber low/high, red heel/toe). The debug companion you
+  asked for — you can see exactly how each shot got classified.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `package.json` | Version bumped to 1.4.0 |
-| `src/components/TopBar.jsx` | Imports package.json; version display reads from it; tooltip "Active user" → "Active player" |
-| `src/components/SettingsPanel.jsx` | "Users" → "Players" labels |
-| `src/components/UserModal.jsx` | Title/button text uses "player"; welcome subtitle uses "players" |
-| `src/components/ImportUserModal.jsx` | Visible strings use "player" |
-| `src/components/ScopeSummary.jsx` | Smarter `isFilteringTypes` logic; accepts `availableTypes` prop |
-| `src/views/ShapeView.jsx` | Y axis flipped; corner labels swapped |
-| `src/views/ShotsView.jsx` | "USER" column label → "PLAYER"; EquipmentPicker opens to current brand + highlights current model |
-| `src/App.jsx` | New `shotsForEditing` memo (no type filter for Shots view); TYPES row always visible (`showTypes = shots.length > 0`); passes `availableTypes` to ScopeSummary |
+| `src/data/benchmarks.js` | New `STRIKE_HV_BANDS`, `classifyStrike` rewritten for H/V model, added `strikeBandLabel` |
+| `src/views/StrikeView.jsx` | Tolerance reference, zone rectangles in plots, mini count summary, Strike Zone Table all updated |
+| `src/views/DistanceView.jsx` | Smart cohort = centred + low; explanation text |
+| `src/views/OverviewView.jsx` | Strike insight excludes low; gap insight uses centred + low |
+| `src/views/ShotsView.jsx` | New `strike` column on Club tab with colour-coded band labels |
+| `package.json` | 1.4.0 → 1.5.0 |
 
 ## Verified
 
 - Production build clean
-- Version 1.4.0 baked into the bundle
-- TopBar will display "v1.4"
+- Sanity-checked on your 28/5 data (54°, 7i, 6i) — bands distribute as
+  expected, Smart cohort produces honest carries
 
-## Answers to the open questions
+## What this unlocks
 
-- **"How else is brand used?"** — Right now, nowhere. Stop-gap capture
-  only by explicit decision. Shows in the EQUIP column, that's it. The
-  proper equipment system (filtering + analysis) is the deferred work
-  for when you've thought through the workflow.
+Your 28/5 session, once you tag the 54° wedge shots by shot type (full
+vs pitch vs chip — most are pitches given 65 shots), will give you:
 
-- **"Off-centre carries further than centre on 7i 28/5"** — Genuine
-  small-sample / strike-quality vs swing-speed effect, not a bug in the
-  cohort logic. Investigating it properly requires uploading the 28/5
-  data so I can see the actual shots — deferred per your call.
+1. A clean full-wedge baseline
+2. A separate "Smart" carry that honestly includes your strongest 7-iron
+   strikes
+3. Visible LOW shots in the Strike view — you'll see that your wedge
+   pattern is dominantly low-face (48 of 65) which is real coaching info
 
-- **"Smash factor on 7i 28/5 lower for centred than near/off"** —
-  Genuinely interesting catch. Possible causes range from real club
-  physics (gear effect from high-face strikes) to a strike
-  classification miscalibration. Needs your data to investigate
-  properly — deferred until upload.
+## What's next (backlog)
 
-## Backlog
-
-Per your instruction, **column reordering in Shots view** is parked on
-the backlog. Other deferred items: smash-factor investigation (needs
-data), off-centre-carries-further note, proper equipment system,
-PR 4.14 per-club swing fingerprint view.
+- Column reordering in Shots view
+- Proper equipment system (free text, autocomplete, filtering, bag management)
+- Per-club swing fingerprint view (now PR 4.15 in this numbering)

@@ -195,7 +195,11 @@ function Insights({ shots, byClub, rightHanded, units }) {
         s, c: classifyStrike(s.club, s.faceImpactH, s.faceImpactV),
       })).filter((x) => x.c);
       const centred = classified.filter((x) => x.c.band === 'centred').map((x) => x.s);
-      const off = classified.filter((x) => x.c.band === 'off' || x.c.band === 'miss').map((x) => x.s);
+      // "Off" for this insight means strikes that genuinely cost ball speed:
+      // heel/toe (gear effect, energy loss) and high-face (added dynamic loft).
+      // Low-face strikes are excluded — they're often the strongest iron
+      // strikes, not a problem worth flagging.
+      const off = classified.filter((x) => x.c.band === 'heel-toe' || x.c.band === 'high').map((x) => x.s);
       const offPct = (off.length / classified.length) * 100;
       const centredBS = centred.length ? mean(centred.map((s) => s.ballSpeed)) : null;
       const offBS = off.length ? mean(off.map((s) => s.ballSpeed)) : null;
@@ -340,14 +344,15 @@ function Insights({ shots, byClub, rightHanded, units }) {
     });
 
     // Gap problems — adjacent clubs in the ladder within 5 yds of each other.
-    // Use smart-carry (centred + near) where possible; fall back to all-shots.
+    // Use smart-carry (centred + low) where possible; fall back to all-shots.
+    // Matches the Distance view's cohort definition.
     const carriesByClub = {};
     Object.entries(byClub).forEach(([club, clubShots]) => {
       const all = clubShots.map((s) => s.carry).filter((v) => v != null);
       if (all.length < MIN_SHOTS_PER_CLUB) return;
       const withStrike = clubShots.filter((s) => s.faceImpactH != null && s.faceImpactV != null);
       const classified = withStrike.map((s) => ({ s, c: classifyStrike(s.club, s.faceImpactH, s.faceImpactV) })).filter((x) => x.c);
-      const smart = classified.filter((x) => x.c.band === 'centred' || x.c.band === 'near').map((x) => x.s);
+      const smart = classified.filter((x) => x.c.band === 'centred' || x.c.band === 'low').map((x) => x.s);
       const smartCarries = smart.map((s) => s.carry).filter((v) => v != null);
       const carry = smartCarries.length >= 3 ? mean(smartCarries) : mean(all);
       carriesByClub[club] = { carry, source: smartCarries.length >= 3 ? 'smart' : 'all' };

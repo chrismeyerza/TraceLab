@@ -4,6 +4,7 @@ import { convertSpeed, convertDistance, speedLabel, distLabel } from '../lib/uni
 import { formatPath } from '../lib/shape';
 import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
 import { EQUIPMENT_BRANDS } from '../data/equipment';
+import { classifyStrike, strikeBandLabel } from '../data/benchmarks';
 
 /**
  * Shots view: raw editable table of every shot in the current filter scope.
@@ -207,6 +208,28 @@ const makeColumns = (units, userName) => ({
     key: 'faceImpactV', label: 'IMPACT V', num: true,
     render: (s) => s.faceImpactV == null ? '—' : `${s.faceImpactV > 0 ? '+' : ''}${s.faceImpactV}`,
   },
+  // Strike classification — H/V model (centred / low / high / heel-toe).
+  // Sits next to the raw faceImpactH/V columns so the user can see what raw
+  // (mm) → band derivation produced. Coloured by band: green for centred,
+  // amber for low/high, red for heel/toe.
+  strike: {
+    key: 'strike', label: 'STRIKE',
+    render: (s) => {
+      const cl = classifyStrike(s.club, s.faceImpactH, s.faceImpactV);
+      return cl ? strikeBandLabel(cl.band) : '—';
+    },
+    cellStyle: (s) => {
+      const cl = classifyStrike(s.club, s.faceImpactH, s.faceImpactV);
+      if (!cl) return { color: 'var(--text-dim)' };
+      return {
+        fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 600,
+        color:
+          cl.band === 'centred' ? 'var(--green)' :
+          cl.band === 'heel-toe' ? 'var(--red)' :
+          'var(--amber)',
+      };
+    },
+  },
   spinLoft: {
     key: 'spinLoft', label: 'SPIN LOFT', num: true,
     render: (s) => s.spinLoft == null ? '—' : `${s.spinLoft.toFixed(1)}°`,
@@ -241,7 +264,7 @@ const TABS = {
       'when', 'clubSpeed', 'clubSpeedImpact', 'angleOfAttack',
       'clubPath', 'faceToTarget', 'startLine', 'faceToPath',
       'loft', 'spinLoft', 'lie', 'closureRate',
-      'faceImpactH', 'faceImpactV',
+      'faceImpactH', 'faceImpactV', 'strike',
     ],
   },
 };

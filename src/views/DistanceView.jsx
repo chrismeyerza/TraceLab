@@ -34,6 +34,11 @@ export default function DistanceView({ shots, units }) {
 
   // Group shots once, per club, into the three cohorts. Reused by both the
   // table and the gapping ladder so the analysis is consistent.
+  // Smart = "Centred + Low" — under the new H/V strike model (PR 4.14),
+  // low-face strikes on irons often produce the player's best ball-speed
+  // strikes (lower dynamic loft, more efficient energy transfer). Pooling
+  // them with centred gives a more honest reliable-yardage baseline than
+  // centred-only on small samples.
   const cohortsByClub = useMemo(() => {
     const map = {};
     for (const club of clubs) {
@@ -46,8 +51,8 @@ export default function DistanceView({ shots, units }) {
         cl: classifyStrike(s.club, s.faceImpactH, s.faceImpactV),
       }));
       const centred = withClass.filter((x) => x.cl?.band === 'centred').map((x) => x.s);
-      const near    = withClass.filter((x) => x.cl?.band === 'near').map((x) => x.s);
-      const smart   = [...centred, ...near];
+      const low     = withClass.filter((x) => x.cl?.band === 'low').map((x) => x.s);
+      const smart   = [...centred, ...low];
       map[club] = { all, smart, centred };
     }
     return map;
@@ -77,10 +82,10 @@ export default function DistanceView({ shots, units }) {
           by your worst shots.
           <br /><br />
           We split each club's shots three ways. <strong style={{ color: 'var(--text-strong)' }}>All shots</strong> is the
-          honest baseline. <strong style={{ color: 'var(--green)' }}>Smart</strong> drops "off" and "miss" strikes
-          to give your realistic playing distance — the number to use for club selection on course.
+          honest baseline. <strong style={{ color: 'var(--green)' }}>Smart</strong> keeps centred + low-face strikes
+          and drops high-face / heel/toe — your realistic playing distance, the number to use for club selection on course.
           <strong style={{ color: 'var(--text-strong)' }}> Centred only</strong> shows your ceiling: what you carry when you
-          flush it. Cohorts use the per-club strike tolerance from the Strike view.
+          truly flush it. Cohorts use the per-club H/V strike bands from the Strike view.
         </div>
       </div>
 
@@ -89,7 +94,7 @@ export default function DistanceView({ shots, units }) {
           <div className="card-title">
             <span className="num">02</span>Carry & total by club
           </div>
-          <div className="card-subtitle">All shots · Smart (centred + near) · Centred only · per club</div>
+          <div className="card-subtitle">All shots · Smart (centred + low) · Centred only · per club</div>
         </div>
         <DistanceTable cohortsByClub={cohortsByClub} clubs={clubs} units={units} />
       </div>
