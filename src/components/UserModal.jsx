@@ -49,11 +49,11 @@ export default function UserModal({ mode, initial, onSubmit, onCancel }) {
         <div className="modal-header">
           <div className="modal-title">
             {isFirstLaunch ? 'Welcome to TraceLab' :
-             mode === 'edit' ? 'Edit user' : 'Add user'}
+             mode === 'edit' ? 'Edit player' : 'Add player'}
           </div>
           {isFirstLaunch && (
             <div className="modal-subtitle">
-              We've set up a profile for you — just confirm your handicap and dominant hand. You can change the name or add more users any time.
+              We've set up a profile for you — just confirm your handicap and dominant hand. You can change the name or add more players any time.
             </div>
           )}
         </div>
@@ -128,7 +128,7 @@ export default function UserModal({ mode, initial, onSubmit, onCancel }) {
             onClick={submit}
             disabled={!canSubmit}
           >
-            {isFirstLaunch ? 'Get started' : mode === 'edit' ? 'Save changes' : 'Create user'}
+            {isFirstLaunch ? 'Get started' : mode === 'edit' ? 'Save changes' : 'Create player'}
           </button>
         </div>
       </div>

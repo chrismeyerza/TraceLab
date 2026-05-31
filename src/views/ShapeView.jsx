@@ -220,7 +220,13 @@ function FacePathScatter({ shots, selectedId, onSelectShot }) {
   const PAD = 50;
   const range = 15;
   const xToPx = (x) => PAD + ((x + range) / (range * 2)) * (W - PAD * 2);
-  const yToPx = (y) => H - PAD - ((y + range) / (range * 2)) * (H - PAD * 2);
+  // Y axis is INVERTED relative to standard math orientation: negative
+  // face-to-target (closed face → draw/hook) is at the TOP, positive (open
+  // face → fade/slice) is at the BOTTOM. This makes the plot read like ball
+  // flight from the player's view — a draw curves up-and-left, a fade
+  // down-and-right. Both labels and dots use this same fn so they stay
+  // consistent; we just flipped the sign convention inside it.
+  const yToPx = (y) => PAD + ((y + range) / (range * 2)) * (H - PAD * 2);
   return (
     <div className="plot-container">
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
@@ -263,11 +269,11 @@ function FacePathScatter({ shots, selectedId, onSelectShot }) {
           strokeWidth="1"
         />
 
-        <text x={xToPx(8)} y={yToPx(-8)} className="axis-label" textAnchor="middle">
-          FACE OPEN · FADE/SLICE
-        </text>
-        <text x={xToPx(-8)} y={yToPx(8)} className="axis-label" textAnchor="middle">
+        <text x={xToPx(-8)} y={yToPx(-8)} className="axis-label" textAnchor="middle">
           FACE CLOSED · DRAW/HOOK
+        </text>
+        <text x={xToPx(8)} y={yToPx(8)} className="axis-label" textAnchor="middle">
+          FACE OPEN · FADE/SLICE
         </text>
 
         <text x={W / 2} y={H - 8} className="axis-label" textAnchor="middle">

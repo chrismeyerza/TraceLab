@@ -53,7 +53,7 @@ const makeColumns = (units, userName) => ({
   // userName lookup passed in from App. Falls back to "—" for shots with no
   // userId (shouldn't happen post-backfill, but robust to legacy data).
   user: {
-    key: 'userId', label: 'USER',
+    key: 'userId', label: 'PLAYER',
     render: (s) => userName(s.userId),
     style: { fontSize: 11, color: 'var(--text-dim)' },
   },
@@ -667,7 +667,12 @@ function TypePicker({ onPick, onClose, label, current }) {
  * text — that's the deferred "proper" version.
  */
 function EquipmentPicker({ onPick, onClose, label, current }) {
-  const [brand, setBrand] = useState(null);
+  // If a tag is already set, open straight to its brand's model list so the
+  // current selection is immediately visible (and highlighted).
+  const currentBrand = current
+    ? EQUIPMENT_BRANDS.find((b) => current.startsWith(b.brand))?.brand || null
+    : null;
+  const [brand, setBrand] = useState(currentBrand);
   const brandObj = EQUIPMENT_BRANDS.find((b) => b.brand === brand);
   return (
     <div
@@ -683,15 +688,23 @@ function EquipmentPicker({ onPick, onClose, label, current }) {
       </div>
       {!brand ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-          {EQUIPMENT_BRANDS.map((b) => (
-            <button
-              key={b.brand}
-              onClick={() => setBrand(b.brand)}
-              className="chip"
-            >
-              {b.brand}
-            </button>
-          ))}
+          {EQUIPMENT_BRANDS.map((b) => {
+            // Highlight the brand that the current tag belongs to, so when you
+            // reopen the picker it's obvious what's already assigned.
+            const isCurrentBrand = current && current.startsWith(b.brand);
+            return (
+              <button
+                key={b.brand}
+                onClick={() => setBrand(b.brand)}
+                className={`chip ${isCurrentBrand ? 'active' : ''}`}
+                style={isCurrentBrand ? {
+                  background: 'var(--green)', borderColor: 'var(--green)', color: '#0a0e0c',
+                } : {}}
+              >
+                {b.brand}{isCurrentBrand ? ' ✓' : ''}
+              </button>
+            );
+          })}
           <button
             className="btn-secondary"
             style={{ padding: '4px 10px', fontSize: 9, marginLeft: 6 }}
@@ -720,14 +733,27 @@ function EquipmentPicker({ onPick, onClose, label, current }) {
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {/* Bare brand option ("Titleist" with no model) */}
-            <button onClick={() => onPick(brand)} className="chip">
-              {brand} (unspecified)
+            <button
+              onClick={() => onPick(brand)}
+              className={`chip ${current === brand ? 'active' : ''}`}
+              style={current === brand ? { background: 'var(--green)', borderColor: 'var(--green)', color: '#0a0e0c' } : {}}
+            >
+              {brand} (unspecified){current === brand ? ' ✓' : ''}
             </button>
-            {brandObj?.models.map((m) => (
-              <button key={m} onClick={() => onPick(`${brand} ${m}`)} className="chip">
-                {m}
-              </button>
-            ))}
+            {brandObj?.models.map((m) => {
+              const full = `${brand} ${m}`;
+              const isCurrent = current === full;
+              return (
+                <button
+                  key={m}
+                  onClick={() => onPick(full)}
+                  className={`chip ${isCurrent ? 'active' : ''}`}
+                  style={isCurrent ? { background: 'var(--green)', borderColor: 'var(--green)', color: '#0a0e0c' } : {}}
+                >
+                  {m}{isCurrent ? ' ✓' : ''}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

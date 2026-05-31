@@ -2,6 +2,17 @@
  * Sticky top navigation bar. Shows brand, view tabs, units toggle, and a few
  * at-a-glance stats. State is owned by App.
  */
+import pkg from '../../package.json';
+
+/**
+ * Top navigation: brand mark, app name, version (auto-read from
+ * package.json so it tracks the project's actual release number with no
+ * manual editing in two places), nav tabs, the units / sessions / shots /
+ * latest stat pills, then on the right: active-player label and the gear
+ * button. The version display is plain "vN.N" — patch versions like 1.4.1
+ * are deliberately compressed to "v1.4" since the user-facing number is
+ * what matters; PR-level granularity lives in the changelog.
+ */
 export default function TopBar({
   view,
   setView,
@@ -28,7 +39,7 @@ export default function TopBar({
       <div className="brand">
         <span className="brand-mark"></span>
         <span className="brand-name">TraceLab</span>
-        <span className="brand-sub">v1.3</span>
+        <span className="brand-sub">v{pkg.version.split('.').slice(0,2).join('.')}</span>
       </div>
       <nav className="nav">
         {tabs.map(([key, label]) => (
@@ -64,7 +75,7 @@ export default function TopBar({
           <span className="stat-pill-val">{lastSessionDate}</span>
         </div>
         {activeUser && (
-          <span className="gear-active-name" title={`Active user: ${activeUser.name}`}>
+          <span className="gear-active-name" title={`Active player: ${activeUser.name}`}>
             {activeUser.name}
           </span>
         )}
