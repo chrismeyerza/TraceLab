@@ -3,8 +3,8 @@ import { clubColor, orderedClubs, normalizeClubName } from '../lib/clubs';
 import { convertSpeed, convertDistance, speedLabel, distLabel } from '../lib/units';
 import { formatPath } from '../lib/shape';
 import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
-import { EQUIPMENT_BRANDS } from '../data/equipment';
-import { classifyStrike, strikeBandLabel } from '../data/benchmarks';
+import { EQUIPMENT_BRANDS, getBrandsForCategory } from '../data/equipment';
+import { classifyStrike, strikeBandLabel, clubCategory } from '../data/benchmarks';
 import { addTag, removeTag } from '../lib/tags';
 import TagEditor from '../components/TagEditor';
 
@@ -436,18 +436,51 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
               label={`Set type for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
             />
           )}
-          {bulkEquipOpen && (
-            <EquipmentPicker
-              onPick={async (equip) => {
-                const updates = [...selected].map((id) => ({ id, patch: { equipment: equip } }));
-                await onUpdateShots(updates);
-                setBulkEquipOpen(false);
-                setSelected(new Set());
-              }}
-              onClose={() => setBulkEquipOpen(false)}
-              label={`Set equipment for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
-            />
-          )}
+          {bulkEquipOpen && (() => {
+            // Bulk equipment tagging only makes sense when all selected shots
+            // belong to the same club category — tagging a driver and an
+            // iron with "Callaway Rogue ST" is nonsense. So we look at the
+            // selected shots; if they span categories, refuse with a clear
+            // message; otherwise show the picker filtered to that category.
+            const selectedShots = shots.filter((s) => selected.has(s.id));
+            const cats = new Set(selectedShots.map((s) => clubCategory(s.club)));
+            if (cats.size > 1) {
+              return (
+                <div
+                  style={{
+                    marginTop: 8, padding: 12,
+                    background: 'var(--bg-elev-3)',
+                    border: '1px solid var(--amber)',
+                    borderRadius: 6,
+                    fontSize: 12, color: 'var(--text)',
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Can't bulk-tag mixed equipment categories</div>
+                  <div style={{ color: 'var(--text-dim)', marginBottom: 8 }}>
+                    Selected shots span multiple club categories ({[...cats].join(', ')}).
+                    Equipment tags are category-specific — pick shots from one category at a time.
+                  </div>
+                  <button className="btn-secondary" style={{ padding: '3px 10px', fontSize: 10 }} onClick={() => setBulkEquipOpen(false)}>
+                    CLOSE
+                  </button>
+                </div>
+              );
+            }
+            const sharedCategory = [...cats][0] || 'iron';
+            return (
+              <EquipmentPicker
+                category={sharedCategory}
+                onPick={async (equip) => {
+                  const updates = [...selected].map((id) => ({ id, patch: { equipment: equip } }));
+                  await onUpdateShots(updates);
+                  setBulkEquipOpen(false);
+                  setSelected(new Set());
+                }}
+                onClose={() => setBulkEquipOpen(false)}
+                label={`Set equipment for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
+              />
+            );
+          })()}
           {bulkTagsOpen && (
             <BulkTagsPanel
               draft={bulkTagsDraft}
@@ -576,6 +609,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                           {editingEquip === s.id && (
                             <EquipmentPicker
                               current={s.equipment}
+                              category={clubCategory(s.club)}
                               onPick={async (equip) => { await onUpdateShot(s.id, { equipment: equip }); setEditingEquip(null); }}
                               onClose={() => setEditingEquip(null)}
                               label="Set equipment:"
@@ -758,19 +792,39 @@ function TypePicker({ onPick, onClose, label, current }) {
 }
 
 /**
- * Equipment picker — fixed brand → model taxonomy (stop-gap, see
- * data/equipment.js). Two-step: pick a brand, then a model (or the bare
- * brand). A "Clear / untag" option sets equipment back to null. No free
- * text — that's the deferred "proper" version.
+ * Equipment picker — curated brand → model taxonomy filtered to the shot's
+ * club category. A 7-iron only shows iron brands; a driver only shows
+ * driver brands. Prevents nonsense tagging (you can't tag a wedge as
+ * "Callaway Rogue ST" — that's a driver).
+ *
+ * Two-step: pick a brand, then a model (or the bare brand). A "Clear tag"
+ * option sets equipment back to null. No free text — that's the deferred
+ * "proper" version.
+ *
+ * Props:
+ *   onPick(value | null)  — called when user picks a model, bare brand, or clears
+ *   onClose               — called when user cancels (or backgrounds)
+ *   label                 — small label shown at top
+ *   current               — currently-assigned equipment string (or null)
+ *   category              — 'driver' | 'wood' | 'hybrid' | 'iron' | 'wedge'
+ *                           used to filter brand list. Falls back to 'iron'
+ *                           if missing/unknown.
  */
-function EquipmentPicker({ onPick, onClose, label, current }) {
+function EquipmentPicker({ onPick, onClose, label, current, category }) {
+  const brands = getBrandsForCategory(category || 'iron');
   // If a tag is already set, open straight to its brand's model list so the
   // current selection is immediately visible (and highlighted).
   const currentBrand = current
-    ? EQUIPMENT_BRANDS.find((b) => current.startsWith(b.brand))?.brand || null
+    ? brands.find((b) => current.startsWith(b.brand))?.brand || null
     : null;
   const [brand, setBrand] = useState(currentBrand);
-  const brandObj = EQUIPMENT_BRANDS.find((b) => b.brand === brand);
+  const brandObj = brands.find((b) => b.brand === brand);
+
+  const categoryLabel = {
+    driver: 'Driver', wood: 'Fairway wood', hybrid: 'Hybrid',
+    iron: 'Iron', wedge: 'Wedge',
+  }[category || 'iron'] || 'Iron';
+
   return (
     <div
       style={{
@@ -782,12 +836,13 @@ function EquipmentPicker({ onPick, onClose, label, current }) {
     >
       <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
         {label}
+        <span style={{ marginLeft: 8, color: 'var(--green)', fontWeight: 600 }}>
+          · {categoryLabel} equipment
+        </span>
       </div>
       {!brand ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-          {EQUIPMENT_BRANDS.map((b) => {
-            // Highlight the brand that the current tag belongs to, so when you
-            // reopen the picker it's obvious what's already assigned.
+          {brands.map((b) => {
             const isCurrentBrand = current && current.startsWith(b.brand);
             return (
               <button
@@ -829,7 +884,6 @@ function EquipmentPicker({ onPick, onClose, label, current }) {
             </span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {/* Bare brand option ("Titleist" with no model) */}
             <button
               onClick={() => onPick(brand)}
               className={`chip ${current === brand ? 'active' : ''}`}
