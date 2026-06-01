@@ -213,6 +213,78 @@
   .scope-summary-chip.tone-equip { color: var(--blue); border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.08); }
   .scope-summary-chip.tone-tags { color: var(--purple); border-color: rgba(192,132,252,0.4); background: rgba(192,132,252,0.08); }
 
+  /* TAG MANAGEMENT PANEL --------------------------------------------- */
+  /* Popover anchored to the TAGS filter row's "Manage" button. Lists every
+     tag in the dataset with usage count and rename/delete actions per row.
+     Styled like the settings panel for visual consistency. */
+  .tag-management-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 6px;
+    width: 360px;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    z-index: 60;
+  }
+  .tag-management-list {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .tag-management-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    gap: 8px;
+    min-height: 36px;
+  }
+  .tag-management-row:hover { border-color: var(--border-strong); }
+  .tag-management-label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tag-management-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .tag-management-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    background: var(--bg-elev-3);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .tag-management-actions {
+    display: flex;
+    gap: 2px;
+  }
+  .tag-management-footnote {
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-faint);
+    line-height: 1.5;
+  }
+
+  /* The TAGS filter row needs to host the relative-positioned management
+     panel beneath the Manage button. Make the row itself a positioning
+     context only when it contains the panel. */
+  .filter-bar.has-manage-panel { position: relative; }
+
   /* TAG EDITOR -------------------------------------------------------- */
   /* Inline editable list of tag chips + autocomplete input. Used both as
      a per-shot inline editor and in bulk actions. The wrapper relative-

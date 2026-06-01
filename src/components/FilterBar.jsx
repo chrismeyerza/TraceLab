@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { clubColor } from '../lib/clubs';
 import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
+import TagManagementPanel from './TagManagementPanel';
 
 /**
  * Filter bar with two stacked rows:
@@ -30,7 +32,11 @@ export default function FilterBar({
   showTypes, availableTypes, selectedTypes, setSelectedTypes,
   showEquipment, availableEquipment, selectedEquipment, setSelectedEquipment,
   showTags, availableTagsList, selectedTags, setSelectedTags,
+  onRenameTag, onDeleteTag,
 }) {
+  // The "Manage tags" popover is opened from a button on the TAGS filter
+  // row. Local state — closing on outside click is handled inside the panel.
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   // Click behaviour matches list-selection conventions everywhere else:
   //  Plain click   → focus on ONLY this club (replaces the entire selection)
   //  Cmd / Ctrl    → toggle this club in/out of the existing selection (additive)
@@ -247,7 +253,7 @@ export default function FilterBar({
         </div>
       )}
       {showTags && (
-        <div className="filter-bar">
+        <div className={`filter-bar ${tagManagerOpen ? 'has-manage-panel' : ''}`} style={{ position: 'relative' }}>
           <span className="filter-label">TAGS</span>
           <div className="chip-row">
             <button
@@ -267,7 +273,23 @@ export default function FilterBar({
                 {tag} <span style={{ opacity: 0.55, fontSize: '0.85em', marginLeft: 4 }}>{count}</span>
               </button>
             ))}
+            <button
+              className="chip"
+              onClick={() => setTagManagerOpen((v) => !v)}
+              title="Rename or delete tags globally"
+              style={{ marginLeft: 6, opacity: 0.8 }}
+            >
+              MANAGE…
+            </button>
           </div>
+          {tagManagerOpen && (
+            <TagManagementPanel
+              tagsList={availableTagsList}
+              onRename={(oldTag, newTag) => onRenameTag(oldTag, newTag)}
+              onDelete={(tag) => onDeleteTag(tag)}
+              onClose={() => setTagManagerOpen(false)}
+            />
+          )}
         </div>
       )}
     </div>
