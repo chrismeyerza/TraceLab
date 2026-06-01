@@ -358,13 +358,16 @@ export async function migrateDedupKeys() {
 }
 
 /**
- * Backfill shotType + equipment on shots imported before those fields
+ * Backfill shotType + equipment + tags on shots imported before those fields
  * existed. Every legacy shot becomes shotType='full' (so existing analysis
- * baselines are unchanged) and equipment=null (untagged). Idempotent via a
- * meta flag; safe to call on every boot.
+ * baselines are unchanged), equipment=null (untagged), tags=[] (no tags).
+ * Idempotent via a meta flag; safe to call on every boot.
+ *
+ * Note: the meta key got bumped to v2 when we added tags so existing users
+ * who already ran the v1 migration get a top-up for the new field.
  */
 export async function migrateShotMeta() {
-  const META_KEY = 'shotmeta-migration-v1';
+  const META_KEY = 'shotmeta-migration-v2';
   const db = await openDB();
   const already = await new Promise((resolve) => {
     const tx = db.transaction(STORE_META, 'readonly');
@@ -380,6 +383,7 @@ export async function migrateShotMeta() {
     const patch = {};
     if (s.shotType == null) patch.shotType = 'full';
     if (!('equipment' in s)) patch.equipment = null;
+    if (!Array.isArray(s.tags)) patch.tags = [];
     if (Object.keys(patch).length) touched.push({ ...s, ...patch });
   }
   if (touched.length) {

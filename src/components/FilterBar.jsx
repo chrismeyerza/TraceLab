@@ -28,6 +28,8 @@ export default function FilterBar({
   timeFilter, setTimeFilter,
   pinnedSession, setPinnedSession,
   showTypes, availableTypes, selectedTypes, setSelectedTypes,
+  showEquipment, availableEquipment, selectedEquipment, setSelectedEquipment,
+  showTags, availableTagsList, selectedTags, setSelectedTags,
 }) {
   // Click behaviour matches list-selection conventions everywhere else:
   //  Plain click   → focus on ONLY this club (replaces the entire selection)
@@ -60,19 +62,49 @@ export default function FilterBar({
   const typesActive = showTypes && selectedTypes.length === 1 && selectedTypes[0] === 'full'
     ? false  // default state (full-only) doesn't count as "active"
     : showTypes && !(selectedTypes.length === availableTypes.length);
+  const equipmentActive = showEquipment && (selectedEquipment?.length || 0) > 0;
+  const tagsActive = showTags && (selectedTags?.length || 0) > 0;
 
   const isAnyFilterActive =
     (selected.length !== clubs.length) ||
     (timeFilter !== 'all') ||
     !!pinnedSession ||
-    typesActive;
+    typesActive ||
+    equipmentActive ||
+    tagsActive;
 
   const clearAll = () => {
     setSelected(clubs);
     setTimeFilter('all');
     setPinnedSession(null);
     if (showTypes) setSelectedTypes(['full']); // reset to clean baseline
+    if (showEquipment) setSelectedEquipment([]);
+    if (showTags) setSelectedTags([]);
   };
+
+  // Generic "OR within row, AND across rows" click handler — same pattern
+  // for both EQUIPMENT and TAGS chip rows. Plain click focuses on one;
+  // re-clicking the sole selection clears the row (ALL); cmd-click toggles
+  // additively. Matches the existing CLUBS / TYPES behaviour for a
+  // consistent interaction model across every filter row.
+  const makeOrClickHandler = (selectedArr, setSelectedFn) => (val, e) => {
+    const isAdditive = e && (e.metaKey || e.ctrlKey);
+    if (isAdditive) {
+      if (selectedArr.includes(val)) {
+        setSelectedFn(selectedArr.filter((x) => x !== val));
+      } else {
+        setSelectedFn([...selectedArr, val]);
+      }
+    } else {
+      if (selectedArr.length === 1 && selectedArr[0] === val) {
+        setSelectedFn([]); // clear row → "all"
+      } else {
+        setSelectedFn([val]);
+      }
+    }
+  };
+  const clickEquipment = makeOrClickHandler(selectedEquipment || [], setSelectedEquipment);
+  const clickTag = makeOrClickHandler(selectedTags || [], setSelectedTags);
 
   // Shot-type chip click. Same focus/additive model as clubs: plain click
   // focuses on just that type, cmd/ctrl-click toggles it into the selection.
@@ -185,6 +217,54 @@ export default function FilterBar({
                 title="Click to focus on just this type · Cmd/Ctrl-click to add to selection"
               >
                 {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {showEquipment && (
+        <div className="filter-bar">
+          <span className="filter-label">EQUIPMENT</span>
+          <div className="chip-row">
+            <button
+              className={`chip ${(selectedEquipment?.length || 0) === 0 ? 'active' : ''}`}
+              onClick={() => setSelectedEquipment([])}
+              title="Show shots with any equipment (or no tag)"
+            >
+              ALL
+            </button>
+            {availableEquipment.map((eq) => (
+              <button
+                key={eq}
+                className={`chip ${selectedEquipment?.includes(eq) ? 'active' : ''}`}
+                onClick={(e) => clickEquipment(eq, e)}
+                title="Click to focus on just this equipment · Cmd/Ctrl-click to add to selection"
+              >
+                {eq}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {showTags && (
+        <div className="filter-bar">
+          <span className="filter-label">TAGS</span>
+          <div className="chip-row">
+            <button
+              className={`chip ${(selectedTags?.length || 0) === 0 ? 'active' : ''}`}
+              onClick={() => setSelectedTags([])}
+              title="Show shots with any tag (or none)"
+            >
+              ALL
+            </button>
+            {availableTagsList.map(({ tag, count }) => (
+              <button
+                key={tag}
+                className={`chip ${selectedTags?.includes(tag) ? 'active' : ''}`}
+                onClick={(e) => clickTag(tag, e)}
+                title={`${count} shot${count === 1 ? '' : 's'} · Click to focus · Cmd/Ctrl-click to add`}
+              >
+                {tag} <span style={{ opacity: 0.55, fontSize: '0.85em', marginLeft: 4 }}>{count}</span>
               </button>
             ))}
           </div>

@@ -340,9 +340,16 @@ export function parseForesightFile(input, fileName) {
       shot.shotType = 'full';
 
       // Equipment tag: which physical club. Null on import (untagged). Set
-      // later via the fixed brand/model picker in the Shots view. Stop-gap
-      // capture only for now — not yet filtered or analysed.
+      // later via the fixed brand/model picker in the Shots view.
       shot.equipment = null;
+
+      // Free-form tags: user-defined string labels. Array of strings, empty
+      // on import. Distinct from equipment because (a) tags are user-defined,
+      // not from a fixed list and (b) a shot can have many tags whereas
+      // equipment is single-valued. Both are filterable through the same
+      // mechanism (chip row in FilterBar) but live in different data fields
+      // so their meanings stay clean.
+      shot.tags = [];
 
       return shot;
     })
