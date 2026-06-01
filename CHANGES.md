@@ -1,141 +1,146 @@
-# Changes — Strike classification rework: H/V model (PR 4.14)
+# Changes — Equipment filtering + free-form tags (PR 4.15)
 
-A genuine rethink of how we classify strike quality, based on the 28/5 7i
-anomaly you flagged. Version bumped to **1.5.0**.
+Tags become first-class filters. Two new filter rows in the FilterBar, two
+new per-shot fields are now filterable, and a whole new free-form tagging
+concept arrives. Version bumped to **1.6.0**.
 
-## The problem (recap)
+## What this adds
 
-Your 28/5 7i data showed centred shots with LOWER smash factor than
-near-centre and off-centre shots (1.30 vs 1.34 vs 1.33). At first glance
-this looks like a bug. It isn't — it's a model failure. The old
-classifier used a single distance from face centre (`sqrt(H² + V²)`),
-treating horizontal and vertical misses as equivalent.
+### Equipment is now filterable
 
-They're not. For irons:
+Equipment was stop-gap capture before (visible in the EQUIP column but
+filtered nowhere). Now:
+- **EQUIPMENT filter row** in the FilterBar — appears when at least one
+  shot has an equipment tag
+- Click a chip to focus on shots with that equipment
+- Cmd/Ctrl-click to add to the selection (multiple equipment shown together)
+- The brand+model list is still the curated stop-gap (Titleist/Ping/Mizuno
+  etc) — no free-text entry for equipment yet, that's a different decision
+  you flagged you want to think through
 
-- **Horizontal misses** (toe/heel) lose energy via gear effect → lower smash
-- **High-face strikes** add dynamic loft → lower ball speed, weaker carry
-- **Low-face strikes** REDUCE dynamic loft → HIGHER ball speed (this is why
-  iron designers move CoG forward and low: a low-on-face strike is often
-  the player's best smash)
+### Free-form tags (new concept)
 
-Your 7i "centred" cohort included two high-face strikes (one a disaster
-at 88y carry / 1.20 smash) which dragged the average down. Your "near"
-and "off" cohorts were dominated by low-face strikes — the genuinely
-strong ones. The old radius math hid this entirely.
+A completely separate tagging system. Each shot can carry an arbitrary
+list of user-defined string labels:
 
-## The new model
+- `windy`, `after lesson with John`, `tournament prep`, `range`, `felt good`,
+  `tested new ball`, anything you want — pure free text
+- Multiple tags per shot
+- **Stored as an array** on each shot (`tags: string[]`)
+- Distinct from equipment because tags are user-defined and many-per-shot;
+  equipment is curated and one-per-shot
 
-Two independent thresholds per club:
+### Tag normalisation (anti-fragmentation)
 
+The big risk of free text is that "windy" and "Windy" and "  windy " all
+become different tags and your filter row gets cluttered. Handled:
+
+- **Trim** leading/trailing whitespace on input (internal spaces preserved
+  — "after lesson" stays "after lesson")
+- **Case-insensitive dedupe** — `Windy` and `windy` collapse to one tag
+- **First-seen casing wins** for display — if you typed `Windy` first,
+  that's how it appears
+- **Autocomplete** suggests existing tags as you type, so you pick the
+  existing `Windy` rather than re-typing `windy`
+
+### Filter semantics
+
+Confirmed pattern across all rows:
+
+- **Within a row: OR** — `7i` + `8i` selected = show shots that are 7i OR 8i
+- **Across rows: AND** — `Equipment=Titleist` AND `Tag=windy` = both must match
+- **Empty selection in a row** = "no filter on this row" (all shots pass it)
+- ALL chip in each row clears the row back to no-filter
+
+### Where you tag
+
+**Per-shot inline editing** — click the TAGS cell in the Shots view → Summary
+tab. Opens an inline TagEditor with:
+- Existing tags shown as removable chips
+- Text input with autocomplete dropdown
+- Press Enter to add, click × to remove
+- Backspace on empty input removes the last chip
+- Arrow keys + Enter to navigate suggestions
+
+**Bulk tagging** — select multiple shots → "Set tags" button → opens a
+panel with two apply modes:
+- **ADD TO SHOTS** (safe, non-destructive) — appends tags to each selected
+  shot's existing tags, dedupe-aware
+- **REPLACE** — overwrites each selected shot's tags with this set entirely.
+  Use this to clear-and-reset.
+
+Both modes use the same autocomplete pool, so you can quickly apply
+existing tags consistently.
+
+## The new filter rows
+
+EQUIPMENT row (only when data has equipment):
 ```
-  |faceH| ≤ HORIZ → horizontally tight
-  |faceH| >  HORIZ → wide (toe/heel)
-  faceV  >  VERT  → high
-  -VERT ≤ faceV ≤ +VERT → mid
-  faceV  < -VERT  → low
+EQUIPMENT  [ALL] [Mizuno Pro 241] [Titleist T150] [Ping i230]
 ```
 
-Combined into **four bands**:
+TAGS row (only when data has tags), with usage counts:
+```
+TAGS  [ALL] [Windy 12] [After lesson 4] [Tournament prep 2] [Range 18]
+```
 
-| Band | Definition | What it means |
-|---|---|---|
-| **Centred** | H tight + V mid | The textbook good strike |
-| **High** | V high (any H) | Loft-adding miss, weakened ball speed |
-| **Low** | V low + H tight | Often the BEST iron strike (lower dynamic loft, more speed) |
-| **Heel/Toe** | H wide + V not high | Horizontal miss, gear-effect energy loss |
-
-The bands aren't symmetric — that's deliberate. High-face dominates
-horizontal position (a high-toe strike is still lofted up); low+horizontal-wide
-gets classified as heel/toe because the horizontal miss is the bigger
-energy loss.
-
-## Thresholds
-
-Per-category bands (mm):
-
-| Category | Horizontal ± | Vertical ± |
-|---|---|---|
-| Driver | 14 | 6 |
-| Fairway wood | 12 | 5 |
-| Hybrid | 11 | 5 |
-| Iron | 10 | 4 |
-| Wedge | 10 | 4 |
-
-These are widely-cited Foresight reference values. Easy to tune later.
-
-## Verified on your 28/5 7i data
-
-| Cohort | Old radius model | New H/V model |
-|---|---|---|
-| Centred | 5 shots, smash 1.31 | 4 shots, smash 1.30 |
-| (Low) | — | **8 shots, smash 1.37, carry 130.8y** |
-| (High) | — | 0 shots this session |
-| (Heel/Toe) | — | 11 shots, smash 1.30 |
-
-The Low cohort is the real insight: **8 shots that are honestly your
-best 7-iron strikes**, hidden in the old model. They're horizontally tight
-and slightly below face centre — exactly the strike profile that produces
-maximum ball speed on a modern game-improvement iron.
-
-## What changed where
-
-### Strike view
-- Tolerance reference card now shows H/V band thresholds (not radii)
-- Per-club strike plots draw the four zones as **rectangles** (the centred
-  inner box, high band above, low band below, heel/toe bands at the sides)
-- Mini count summary under each plot shows centred / low / high / heel-toe
-- Strike Zone Table replaces the four-row band breakdown with the new
-  four bands. Adds "LOW (low-face, H tight)" labelling so the user knows
-  which is which.
-
-### Distance view
-- **"Smart" cohort now = Centred + Low** (was Centred + Near). Reflects
-  the new model's coaching insight that low-face strikes on irons are part
-  of the player's "good shots" set. Explanation text updated.
-
-### Overview view (Insights)
-- Strike pillar's "off-centre" insight now counts only heel/toe and high
-  shots. Low shots are excluded — they're not a problem to flag.
-- Gapping insight uses the same Centred + Low for Smart carry consistency
-  with the Distance view.
-
-### Shots view
-- **New STRIKE column** on the Club tab, next to the IMPACT H / IMPACT V
-  raw values. Shows the band classification per shot, coloured by category
-  (green centred, amber low/high, red heel/toe). The debug companion you
-  asked for — you can see exactly how each shot got classified.
+ScopeSummary chips:
+- Blue `Equip: Titleist T150` chip when equipment filter is active
+- Purple `Tags: Windy, After lesson` chip when tags filter is active
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/data/benchmarks.js` | New `STRIKE_HV_BANDS`, `classifyStrike` rewritten for H/V model, added `strikeBandLabel` |
-| `src/views/StrikeView.jsx` | Tolerance reference, zone rectangles in plots, mini count summary, Strike Zone Table all updated |
-| `src/views/DistanceView.jsx` | Smart cohort = centred + low; explanation text |
-| `src/views/OverviewView.jsx` | Strike insight excludes low; gap insight uses centred + low |
-| `src/views/ShotsView.jsx` | New `strike` column on Club tab with colour-coded band labels |
-| `package.json` | 1.4.0 → 1.5.0 |
+| `src/lib/tags.js` | **NEW** — normaliseTag, canonicalTag, addTag, removeTag, collectTags, shotHasAnyTag, suggestTags |
+| `src/components/TagEditor.jsx` | **NEW** — chip list + autocomplete input, used both inline and in bulk |
+| `src/lib/parser.js` | Defaults `tags: []` on every parsed shot |
+| `src/lib/storage.js` | `migrateShotMeta` bumped to v2, backfills tags=[] on legacy shots |
+| `src/App.jsx` | `selectedEquipment` + `selectedTags` filter state; availableEquipment + availableTagsList derivations; filter logic in filteredShots + shotsForEditing; passes new props to FilterBar/ScopeSummary/ShotsView |
+| `src/components/FilterBar.jsx` | EQUIPMENT + TAGS rows; generic OR-row click handler; updated clearAll |
+| `src/components/ScopeSummary.jsx` | Equip + Tags chips with tone-equip and tone-tags colours |
+| `src/views/ShotsView.jsx` | TAGS column on Summary tab with inline TagEditor; Set tags bulk action; BulkTagsPanel component |
+| `src/index.css` | Tag editor styles (chips, input, suggestion dropdown); tone-equip and tone-tags scope chip colours |
+| `package.json` | 1.5.0 → 1.6.0 |
 
 ## Verified
 
 - Production build clean
-- Sanity-checked on your 28/5 data (54°, 7i, 6i) — bands distribute as
-  expected, Smart cohort produces honest carries
+- Tags library smoke-tested: normalisation strips whitespace, case-
+  insensitive dedupe collapses duplicates, first-seen casing preserved,
+  autocomplete substring-matches case-insensitively
+- Filter semantics: OR within row, AND across rows
 
-## What this unlocks
+## How you'd use it
 
-Your 28/5 session, once you tag the 54° wedge shots by shot type (full
-vs pitch vs chip — most are pitches given 65 shots), will give you:
+Example workflow — tag a windy session:
 
-1. A clean full-wedge baseline
-2. A separate "Smart" carry that honestly includes your strongest 7-iron
-   strikes
-3. Visible LOW shots in the Strike view — you'll see that your wedge
-   pattern is dominantly low-face (48 of 65) which is real coaching info
+1. Apply, restart the app
+2. Sessions → import the session, or just navigate to existing shots
+3. Shots view → select all shots from that session (header checkbox)
+4. "Set tags" → type "Windy" → Enter → ADD TO SHOTS
+5. The new TAGS row appears in the FilterBar with `Windy 24` (or however many)
+6. Click `Windy` to filter analysis views to that session's shots only
+7. Add more tags over time — `Range`, `Tournament prep`, `After lesson`,
+   whatever's useful
 
-## What's next (backlog)
+You can compose: filter to `Equipment = Mizuno Pro 241` AND `Tags = Windy`
+and see how your gamer iron performed in those conditions specifically.
 
-- Column reordering in Shots view
-- Proper equipment system (free text, autocomplete, filtering, bag management)
-- Per-club swing fingerprint view (now PR 4.15 in this numbering)
+## What's intentionally NOT in this PR
+
+- **No tag management UI** (rename tag globally, delete tag from all shots,
+  merge two tags). Deferred — see if you need it before building. The
+  autocomplete should mean typos are rare.
+- **No equipment free text** — equipment is still the curated brand+model
+  picker only. Adding free-text equipment is the next big decision; that
+  was the workflow you said you want to think through.
+- **No tag taxonomy / parent-child / required prefixes** — pure freeform.
+
+## What's next
+
+- **Proper equipment system** — free text + autocomplete + filtering for
+  equipment, possibly user-managed bags. Same machinery as tags but with
+  different semantics (one-per-shot)
+- Column reordering in Shots view (backlog)
+- Per-club swing fingerprint view (backlog)

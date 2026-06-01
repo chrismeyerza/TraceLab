@@ -5,6 +5,8 @@ import { formatPath } from '../lib/shape';
 import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
 import { EQUIPMENT_BRANDS } from '../data/equipment';
 import { classifyStrike, strikeBandLabel } from '../data/benchmarks';
+import { addTag, removeTag } from '../lib/tags';
+import TagEditor from '../components/TagEditor';
 
 /**
  * Shots view: raw editable table of every shot in the current filter scope.
@@ -71,6 +73,13 @@ const makeColumns = (units, userName) => ({
   equipment: {
     key: 'equipment', label: 'EQUIP',
     render: (s) => s.equipment || '—',
+    style: { fontSize: 11, color: 'var(--text-dim)' },
+  },
+  // Free-form tags — array of user-defined strings. Cell shows them as
+  // comma-separated; click opens the inline TagEditor for that shot.
+  tags: {
+    key: 'tags', label: 'TAGS',
+    render: (s) => (s.tags && s.tags.length) ? s.tags.join(', ') : '—',
     style: { fontSize: 11, color: 'var(--text-dim)' },
   },
   // club rendered specially because it's the editable chip — handled inline
@@ -245,7 +254,7 @@ const makeColumns = (units, userName) => ({
 const TABS = {
   summary: {
     label: 'Summary',
-    cols: ['when', 'user', 'shotType', 'equipment', 'ballSpeed', 'efficiency', 'carry', 'totalDist', 'faceToPath'],
+    cols: ['when', 'user', 'shotType', 'equipment', 'tags', 'ballSpeed', 'efficiency', 'carry', 'totalDist', 'faceToPath'],
   },
   ball: {
     label: 'Ball',
@@ -269,7 +278,7 @@ const TABS = {
   },
 };
 
-export default function ShotsView({ shots, units, allClubs, users, onUpdateShot, onUpdateShots, onDeleteShot }) {
+export default function ShotsView({ shots, units, allClubs, users, availableTagsList, onUpdateShot, onUpdateShots, onDeleteShot }) {
   const [tab, setTab] = useState('summary');
   const [sortKey, setSortKey] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
@@ -278,8 +287,11 @@ export default function ShotsView({ shots, units, allClubs, users, onUpdateShot,
   const [bulkLabelOpen, setBulkLabelOpen] = useState(false);
   const [bulkTypeOpen, setBulkTypeOpen] = useState(false);
   const [bulkEquipOpen, setBulkEquipOpen] = useState(false);
+  const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
+  const [bulkTagsDraft, setBulkTagsDraft] = useState([]);
   const [editingType, setEditingType] = useState(null); // shotId for inline type picker
   const [editingEquip, setEditingEquip] = useState(null); // shotId for inline equip picker
+  const [editingTags, setEditingTags] = useState(null); // shotId for inline tag editor
 
   // userId → display name lookup. Memoised on the users list. Unknown ids
   // (e.g. a shot attributed to a since-deleted user) resolve to a dimmed
@@ -379,8 +391,11 @@ export default function ShotsView({ shots, units, allClubs, users, onUpdateShot,
             <button className="btn-secondary" onClick={() => { setBulkTypeOpen(true); setBulkLabelOpen(false); setBulkEquipOpen(false); }}>
               Set type
             </button>
-            <button className="btn-secondary" onClick={() => { setBulkEquipOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); }}>
+            <button className="btn-secondary" onClick={() => { setBulkEquipOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); setBulkTagsOpen(false); }}>
               Set equipment
+            </button>
+            <button className="btn-secondary" onClick={() => { setBulkTagsOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); setBulkEquipOpen(false); setBulkTagsDraft([]); }}>
+              Set tags
             </button>
             <button
               className="btn-danger"
@@ -431,6 +446,38 @@ export default function ShotsView({ shots, units, allClubs, users, onUpdateShot,
               }}
               onClose={() => setBulkEquipOpen(false)}
               label={`Set equipment for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
+            />
+          )}
+          {bulkTagsOpen && (
+            <BulkTagsPanel
+              draft={bulkTagsDraft}
+              setDraft={setBulkTagsDraft}
+              suggestionPool={availableTagsList || []}
+              shotCount={selected.size}
+              onApplyAdd={async () => {
+                const updates = [...selected].map((id) => {
+                  const shot = shots.find((s) => s.id === id);
+                  const next = (bulkTagsDraft || []).reduce(
+                    (acc, t) => addTag(acc, t),
+                    shot?.tags || []
+                  );
+                  return { id, patch: { tags: next } };
+                });
+                await onUpdateShots(updates);
+                setBulkTagsOpen(false);
+                setBulkTagsDraft([]);
+                setSelected(new Set());
+              }}
+              onApplyReplace={async () => {
+                const updates = [...selected].map((id) => ({
+                  id, patch: { tags: [...(bulkTagsDraft || [])] },
+                }));
+                await onUpdateShots(updates);
+                setBulkTagsOpen(false);
+                setBulkTagsDraft([]);
+                setSelected(new Set());
+              }}
+              onClose={() => { setBulkTagsOpen(false); setBulkTagsDraft([]); }}
             />
           )}
         </div>
@@ -506,7 +553,7 @@ export default function ShotsView({ shots, units, allClubs, users, onUpdateShot,
                     if (c === 'shotType') {
                       return (
                         <td key={col.key} style={{ ...style, cursor: 'pointer' }}
-                            onClick={() => { setEditingType(editingType === s.id ? null : s.id); setEditingEquip(null); }}
+                            onClick={() => { setEditingType(editingType === s.id ? null : s.id); setEditingEquip(null); setEditingTags(null); }}
                             title="Click to set shot type">
                           <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
                           {editingType === s.id && (
@@ -523,7 +570,7 @@ export default function ShotsView({ shots, units, allClubs, users, onUpdateShot,
                     if (c === 'equipment') {
                       return (
                         <td key={col.key} style={{ ...style, cursor: 'pointer' }}
-                            onClick={() => { setEditingEquip(editingEquip === s.id ? null : s.id); setEditingType(null); }}
+                            onClick={() => { setEditingEquip(editingEquip === s.id ? null : s.id); setEditingType(null); setEditingTags(null); }}
                             title="Click to set equipment">
                           <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
                           {editingEquip === s.id && (
@@ -533,6 +580,33 @@ export default function ShotsView({ shots, units, allClubs, users, onUpdateShot,
                               onClose={() => setEditingEquip(null)}
                               label="Set equipment:"
                             />
+                          )}
+                        </td>
+                      );
+                    }
+                    if (c === 'tags') {
+                      const isEditing = editingTags === s.id;
+                      return (
+                        <td key={col.key}
+                            style={{ ...style, cursor: isEditing ? 'default' : 'pointer', minWidth: 180 }}
+                            onClick={() => {
+                              if (!isEditing) {
+                                setEditingTags(s.id);
+                                setEditingType(null);
+                                setEditingEquip(null);
+                              }
+                            }}
+                            title={isEditing ? '' : 'Click to edit tags'}>
+                          {isEditing ? (
+                            <TagEditor
+                              value={s.tags || []}
+                              onChange={(next) => onUpdateShot(s.id, { tags: next })}
+                              suggestionPool={availableTagsList || []}
+                              placeholder="Add tag…"
+                              compact
+                            />
+                          ) : (
+                            <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
                           )}
                         </td>
                       );
@@ -780,6 +854,72 @@ function EquipmentPicker({ onPick, onClose, label, current }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Bulk tag editor panel. Lets the user build up a set of tags and then choose
+ * how to apply them across the selected shots:
+ *
+ *   ADD       — append these tags to each shot's existing tags (with dedupe)
+ *   REPLACE   — overwrite each shot's tags entirely with this set
+ *
+ * The distinction matters because "add" is the safe, non-destructive operation
+ * (the user can always remove again), and "replace" lets the user clear and
+ * reset a session's tagging in one step. Most workflows are add; replace is
+ * the escape hatch.
+ *
+ * Reuses TagEditor for the actual input + autocomplete UI, with no shot to
+ * mutate — the panel maintains its own draft array via the parent.
+ */
+function BulkTagsPanel({ draft, setDraft, suggestionPool, shotCount, onApplyAdd, onApplyReplace, onClose }) {
+  return (
+    <div
+      style={{
+        marginTop: 8, padding: 12,
+        background: 'var(--bg-elev-3)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 6,
+      }}
+    >
+      <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+        Tags for {shotCount} shot{shotCount === 1 ? '' : 's'}:
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <TagEditor
+          value={draft}
+          onChange={setDraft}
+          suggestionPool={suggestionPool}
+          placeholder="Type tag and press Enter…"
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button
+          className="btn-primary"
+          onClick={onApplyAdd}
+          disabled={draft.length === 0}
+          title="Add these tags to each shot, keeping existing tags"
+          style={{ padding: '5px 12px', fontSize: 10 }}
+        >
+          ADD TO SHOTS
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={onApplyReplace}
+          title="Replace each shot's tags with this set (also clears existing tags)"
+          style={{ padding: '5px 12px', fontSize: 10 }}
+        >
+          REPLACE
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={onClose}
+          style={{ padding: '5px 12px', fontSize: 10 }}
+        >
+          CANCEL
+        </button>
+      </div>
     </div>
   );
 }

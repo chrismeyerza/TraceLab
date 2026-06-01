@@ -11,6 +11,7 @@ import {
   getUsers, getActiveUserId, setActiveUserId,
   addUser, updateUser, deleteUser, backfillShotUsers,
 } from './lib/users';
+import { collectTags, shotHasAnyTag } from './lib/tags';
 import TopBar from './components/TopBar';
 import FilterBar from './components/FilterBar';
 import ScopeSummary from './components/ScopeSummary';
@@ -48,6 +49,13 @@ export default function App() {
   // (the whole point of shot typing). User widens via the TYPES filter row,
   // which only appears once the data actually contains non-full shots.
   const [selectedTypes, setSelectedTypes] = useState(['full']);
+  // Equipment filter: list of equipment strings (e.g. "Titleist T150") that
+  // the user wants to see. Empty array = no equipment filter (all shots).
+  // Same OR-within-row semantics as clubs.
+  const [selectedEquipment, setSelectedEquipment] = useState([]);
+  // Free-form tag filter: list of tag strings. Empty = no tag filter.
+  // OR-within-row (a shot matches if it has ANY of the selected tags).
+  const [selectedTags, setSelectedTags] = useState([]);
   const [pinnedSession, setPinnedSession] = useState(null); // {id, label} or null
   const [loading, setLoading] = useState(true);
   const [importStatus, setImportStatus] = useState(null);
@@ -138,6 +146,24 @@ export default function App() {
   }, [shots]);
   const showTypes = shots.length > 0;
 
+  // Distinct equipment values present in the data. EQUIPMENT row appears
+  // only when at least one shot has equipment set — no point showing an
+  // empty filter row. Sorted alphabetically so the chip order is stable.
+  const availableEquipment = useMemo(() => {
+    const set = new Set();
+    for (const s of shots) {
+      if (s.equipment) set.add(s.equipment);
+    }
+    return [...set].sort();
+  }, [shots]);
+  const showEquipment = availableEquipment.length > 0;
+
+  // Distinct free-form tags across the dataset, with usage counts. Used both
+  // by the FilterBar (chip row) and by the TagEditor's autocomplete pool.
+  // Hidden until at least one tag exists, same pattern.
+  const availableTagsList = useMemo(() => collectTags(shots), [shots]);
+  const showTags = availableTagsList.length > 0;
+
   // Default-select every club when data first loads. Also reset when the
   // underlying club set changes (e.g. after a bulk relabel that introduces
   // a new club or removes an old one).
@@ -204,23 +230,33 @@ export default function App() {
       // shots pre-migration, though migration should have backfilled them).
       const type = s.shotType || 'full';
       if (selectedTypes.length && !selectedTypes.includes(type)) return false;
+      // Equipment filter (OR within row, AND across rows). Empty selection
+      // means "no equipment filter" — show all regardless of equipment value.
+      if (selectedEquipment.length && !selectedEquipment.includes(s.equipment)) return false;
+      // Free-form tag filter (OR within row). shotHasAnyTag treats empty
+      // selectedTags as "no filter" → returns true for every shot.
+      if (!shotHasAnyTag(s, selectedTags)) return false;
       return true;
     });
-  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedTypes]);
+  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedTypes, selectedEquipment, selectedTags]);
 
   // The Shots view is a DATA EDITOR, not an analysis surface. It must show
   // every shot in the club/time/session scope regardless of shot-type, so the
   // user can SEE and tag shots. Applying the type filter here caused a
   // confusing bug: reclassifying a shot to a non-selected type made it vanish
   // (looked like the edit "didn't stick"). So Shots gets everything-but-type.
+  // Equipment and free-form tag filters DO apply here — those are filters
+  // the user actively engages, unlike the silent type=full default.
   const shotsForEditing = useMemo(() => {
     return shots.filter((s) => {
       if (selectedClubs.length && !selectedClubs.includes(s.club)) return false;
       if (pinnedSession && s.sessionId !== pinnedSession.id) return false;
       if (!inTimeWindow(s, newestSessionIds)) return false;
+      if (selectedEquipment.length && !selectedEquipment.includes(s.equipment)) return false;
+      if (!shotHasAnyTag(s, selectedTags)) return false;
       return true;
     });
-  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds]);
+  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedEquipment, selectedTags]);
 
   /**
    * Step 1 of import: parse the file and pause. We don't write to storage
@@ -548,6 +584,14 @@ export default function App() {
                   availableTypes={availableTypes}
                   selectedTypes={selectedTypes}
                   setSelectedTypes={setSelectedTypes}
+                  showEquipment={showEquipment}
+                  availableEquipment={availableEquipment}
+                  selectedEquipment={selectedEquipment}
+                  setSelectedEquipment={setSelectedEquipment}
+                  showTags={showTags}
+                  availableTagsList={availableTagsList}
+                  selectedTags={selectedTags}
+                  setSelectedTags={setSelectedTags}
                 />
                 <ScopeSummary
                   shotsShown={filteredShots.length}
@@ -559,6 +603,8 @@ export default function App() {
                   selectedTypes={selectedTypes}
                   showTypes={showTypes}
                   availableTypes={availableTypes}
+                  selectedEquipment={selectedEquipment}
+                  selectedTags={selectedTags}
                 />
               </>
             )}
@@ -575,6 +621,7 @@ export default function App() {
                 units={units}
                 allClubs={allClubs}
                 users={users}
+                availableTagsList={availableTagsList}
                 onUpdateShot={handleUpdateShot}
                 onUpdateShots={handleUpdateShots}
                 onDeleteShot={handleDeleteShot}

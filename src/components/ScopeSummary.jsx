@@ -12,6 +12,7 @@ export default function ScopeSummary({
   selectedClubs, allClubs,
   timeFilter, pinnedSession,
   selectedTypes, showTypes, availableTypes,
+  selectedEquipment, selectedTags,
 }) {
   const isFilteringClubs = selectedClubs && allClubs && selectedClubs.length !== allClubs.length;
   const isFilteringTime = timeFilter && timeFilter !== 'all';
@@ -26,7 +27,10 @@ export default function ScopeSummary({
   const isFilteringTypes = showTypes && selectedTypes && (
     !isOnlyFullSelected || hasNonFull
   );
-  const anyFilter = isFilteringClubs || isFilteringTime || isPinned || isFilteringTypes;
+  const isFilteringEquipment = (selectedEquipment?.length || 0) > 0;
+  const isFilteringTags = (selectedTags?.length || 0) > 0;
+  const anyFilter = isFilteringClubs || isFilteringTime || isPinned || isFilteringTypes ||
+                    isFilteringEquipment || isFilteringTags;
 
   // No filters active — keep it quiet. The shot count is visible in the page
   // header anyway, no need to duplicate that information here.
@@ -53,6 +57,12 @@ export default function ScopeSummary({
   if (isFilteringTypes) {
     const label = selectedTypes.map((t) => typeLabels[t] || t).join(', ');
     chips.push({ key: 'types', label, tone: 'type' });
+  }
+  if (isFilteringEquipment) {
+    chips.push({ key: 'equip', label: `Equip: ${selectedEquipment.join(', ')}`, tone: 'equip' });
+  }
+  if (isFilteringTags) {
+    chips.push({ key: 'tags', label: `Tags: ${selectedTags.join(', ')}`, tone: 'tags' });
   }
 
   const pct = totalShots > 0 ? Math.round((shotsShown / totalShots) * 100) : 0;

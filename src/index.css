@@ -210,6 +210,107 @@
   .scope-summary-chip.tone-time { color: var(--amber); border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.08); }
   .scope-summary-chip.tone-pin  { color: var(--blue); border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.08); }
   .scope-summary-chip.tone-type { color: var(--purple); border-color: rgba(192,132,252,0.4); background: rgba(192,132,252,0.08); }
+  .scope-summary-chip.tone-equip { color: var(--blue); border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.08); }
+  .scope-summary-chip.tone-tags { color: var(--purple); border-color: rgba(192,132,252,0.4); background: rgba(192,132,252,0.08); }
+
+  /* TAG EDITOR -------------------------------------------------------- */
+  /* Inline editable list of tag chips + autocomplete input. Used both as
+     a per-shot inline editor and in bulk actions. The wrapper relative-
+     positions the suggestion dropdown so it floats below the input. */
+  .tag-editor {
+    position: relative;
+    width: 100%;
+  }
+  .tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    padding: 4px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    min-height: 28px;
+  }
+  .tag-editor.compact .tag-chips { padding: 2px; min-height: 22px; }
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(192,132,252,0.12);
+    border: 1px solid rgba(192,132,252,0.4);
+    color: var(--purple);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .tag-chip-remove {
+    background: transparent;
+    border: none;
+    color: var(--purple);
+    cursor: pointer;
+    padding: 0 0 0 2px;
+    font-size: 13px;
+    line-height: 1;
+    opacity: 0.7;
+  }
+  .tag-chip-remove:hover { opacity: 1; color: var(--red); }
+  .tag-input {
+    flex: 1;
+    min-width: 80px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    outline: none;
+    padding: 2px 4px;
+  }
+  .tag-input::placeholder { color: var(--text-faint); }
+
+  /* Autocomplete dropdown sits below the input. Floats above table rows. */
+  .tag-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 2px;
+    min-width: 200px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 60;
+  }
+  .tag-suggestion {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .tag-suggestion:hover, .tag-suggestion.highlight {
+    background: rgba(192,132,252,0.12);
+    color: var(--purple);
+  }
+  .tag-suggestion-count {
+    font-size: 9px;
+    color: var(--text-faint);
+    background: var(--bg-elev-3);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
 
   /* SHOTS VIEW SUB-TABS */
   .shots-tabs {
