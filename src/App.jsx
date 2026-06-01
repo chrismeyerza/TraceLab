@@ -240,23 +240,13 @@ export default function App() {
     });
   }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedTypes, selectedEquipment, selectedTags]);
 
-  // The Shots view is a DATA EDITOR, not an analysis surface. It must show
-  // every shot in the club/time/session scope regardless of shot-type, so the
-  // user can SEE and tag shots. Applying the type filter here caused a
-  // confusing bug: reclassifying a shot to a non-selected type made it vanish
-  // (looked like the edit "didn't stick"). So Shots gets everything-but-type.
-  // Equipment and free-form tag filters DO apply here — those are filters
-  // the user actively engages, unlike the silent type=full default.
-  const shotsForEditing = useMemo(() => {
-    return shots.filter((s) => {
-      if (selectedClubs.length && !selectedClubs.includes(s.club)) return false;
-      if (pinnedSession && s.sessionId !== pinnedSession.id) return false;
-      if (!inTimeWindow(s, newestSessionIds)) return false;
-      if (selectedEquipment.length && !selectedEquipment.includes(s.equipment)) return false;
-      if (!shotHasAnyTag(s, selectedTags)) return false;
-      return true;
-    });
-  }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedEquipment, selectedTags]);
+  // The Shots view used to bypass the shot-type filter via a separate
+  // `shotsForEditing` memo, because reclassifying a shot's type made it
+  // immediately vanish (the type filter wasn't visible at the time, so the
+  // disappearance looked like the edit silently failed). Now that the TYPES
+  // filter row is always visible and reachable from any view, that defence
+  // is no longer needed — the user can see what's filtering the list and
+  // adjust. Shots view uses the same filteredShots as the analysis views.
 
   /**
    * Step 1 of import: parse the file and pause. We don't write to storage
@@ -637,7 +627,7 @@ export default function App() {
             {view === 'shape' && <ShapeView shots={filteredShots} rightHanded={rightHanded} />}
             {view === 'shots' && (
               <ShotsView
-                shots={shotsForEditing}
+                shots={filteredShots}
                 units={units}
                 allClubs={allClubs}
                 users={users}

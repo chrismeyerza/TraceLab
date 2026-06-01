@@ -134,7 +134,7 @@ const STRIKE_HV_BANDS = {
   wedge:   { horiz: 10, vert: 4 },
 };
 
-function clubCategory(club) {
+export function clubCategory(club) {
   const c = normalizeClubName(club);
   if (c === 'Dr') return 'driver';
   if (/^[0-9]w$/.test(c)) return 'wood';
