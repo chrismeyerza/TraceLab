@@ -11,7 +11,7 @@ import {
   getUsers, getActiveUserId, setActiveUserId,
   addUser, updateUser, deleteUser, backfillShotUsers,
 } from './lib/users';
-import { collectTags, shotHasAnyTag } from './lib/tags';
+import { collectTags, shotHasAnyTag, renameTagInShots, deleteTagFromShots } from './lib/tags';
 import TopBar from './components/TopBar';
 import FilterBar from './components/FilterBar';
 import ScopeSummary from './components/ScopeSummary';
@@ -476,6 +476,24 @@ export default function App() {
     setUserModalMode('add');
   }
 
+  /**
+   * Global tag rename — every shot carrying `oldTag` (case-insensitive)
+   * gets it replaced with `newTag`. If `newTag` already exists on a shot
+   * alongside the old one, addTag's dedupe collapses them. So renaming
+   * functions as both rename and merge depending on whether the target
+   * already exists.
+   */
+  async function handleRenameTag(oldTag, newTag) {
+    const updates = renameTagInShots(shots, oldTag, newTag);
+    if (updates.length) await handleUpdateShots(updates);
+  }
+
+  /** Global tag delete — strip the tag from every shot that carries it. */
+  async function handleDeleteTag(tag) {
+    const updates = deleteTagFromShots(shots, tag);
+    if (updates.length) await handleUpdateShots(updates);
+  }
+
   async function handleDeleteShot(id) {
     await deleteShot(id);
     setShots((curr) => curr.filter((s) => s.id !== id));
@@ -592,6 +610,8 @@ export default function App() {
                   availableTagsList={availableTagsList}
                   selectedTags={selectedTags}
                   setSelectedTags={setSelectedTags}
+                  onRenameTag={handleRenameTag}
+                  onDeleteTag={handleDeleteTag}
                 />
                 <ScopeSummary
                   shotsShown={filteredShots.length}

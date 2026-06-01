@@ -93,3 +93,58 @@ export function suggestTags(query, allTags) {
     .filter(({ tag }) => canonicalTag(tag).includes(q))
     .slice(0, 8);
 }
+
+/**
+ * Build a batch of shot updates that rename a tag globally — every shot
+ * carrying the old tag gets it replaced with the new value. Case-insensitive
+ * source match; output uses the user-supplied casing of `newTag`.
+ *
+ * If the new name (case-insensitively) already exists on a shot alongside the
+ * old name, the result is a single combined entry — the dedupe in addTag
+ * does the merge automatically. So renaming "Windy" → "wind" when a shot
+ * has both ["Windy", "wind"] produces ["wind"] (whichever casing was already
+ * there is preserved by addTag's first-seen rule).
+ *
+ * Returns an array of { id, patch: { tags } } updates ready for
+ * onUpdateShots. Skips shots that don't carry the old tag (no update
+ * needed). Returns empty array if the rename is effectively a no-op
+ * (oldTag === newTag canonically).
+ */
+export function renameTagInShots(shots, oldTag, newTag) {
+  const oldCanon = canonicalTag(oldTag);
+  const newCanon = canonicalTag(newTag);
+  const newNorm = normaliseTag(newTag);
+  if (!oldCanon || !newCanon || !newNorm) return [];
+  if (oldCanon === newCanon) return []; // no-op rename
+  const updates = [];
+  for (const s of shots || []) {
+    if (!s.tags || !s.tags.length) continue;
+    if (!s.tags.some((t) => canonicalTag(t) === oldCanon)) continue;
+    // Strip the old tag, then add the new one through addTag so the
+    // case-insensitive dedupe handles the merge cleanly.
+    const without = s.tags.filter((t) => canonicalTag(t) !== oldCanon);
+    const withNew = addTag(without, newNorm);
+    updates.push({ id: s.id, patch: { tags: withNew } });
+  }
+  return updates;
+}
+
+/**
+ * Build a batch of shot updates that remove a tag globally. Returns
+ * { id, patch: { tags } } updates for every shot that currently has the
+ * tag (case-insensitive); shots without it are skipped.
+ */
+export function deleteTagFromShots(shots, tag) {
+  const canon = canonicalTag(tag);
+  if (!canon) return [];
+  const updates = [];
+  for (const s of shots || []) {
+    if (!s.tags || !s.tags.length) continue;
+    if (!s.tags.some((t) => canonicalTag(t) === canon)) continue;
+    updates.push({
+      id: s.id,
+      patch: { tags: s.tags.filter((t) => canonicalTag(t) !== canon) },
+    });
+  }
+  return updates;
+}
