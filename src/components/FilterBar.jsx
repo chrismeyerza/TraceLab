@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { clubColor } from '../lib/clubs';
-import { SHOT_TYPES, shotTypeLabel } from '../data/shotTypes';
+import { SHOT_TYPES, SHOT_TYPE_KEYS, shotTypeLabel } from '../data/shotTypes';
 import TagManagementPanel from './TagManagementPanel';
 
 /**
@@ -67,7 +67,7 @@ export default function FilterBar({
 
   const typesActive = showTypes && selectedTypes.length === 1 && selectedTypes[0] === 'full'
     ? false  // default state (full-only) doesn't count as "active"
-    : showTypes && !(selectedTypes.length === availableTypes.length);
+    : showTypes && !(selectedTypes.length === SHOT_TYPE_KEYS.length);
   const equipmentActive = showEquipment && (selectedEquipment?.length || 0) > 0;
   const tagsActive = showTags && (selectedTags?.length || 0) > 0;
 
@@ -124,8 +124,10 @@ export default function FilterBar({
       }
     } else {
       if (selectedTypes.length === 1 && selectedTypes[0] === key) {
-        // re-click sole selection → select all available types
-        setSelectedTypes(availableTypes);
+        // re-click sole selection → expand to all known types (not just
+        // the ones currently present in the data, so the user can
+        // pre-select types they're about to start tagging)
+        setSelectedTypes(SHOT_TYPE_KEYS);
       } else {
         setSelectedTypes([key]);
       }
@@ -209,22 +211,35 @@ export default function FilterBar({
           <span className="filter-label">TYPES</span>
           <div className="chip-row">
             <button
-              className={`chip ${selectedTypes.length === availableTypes.length ? 'active' : ''}`}
-              onClick={() => setSelectedTypes(availableTypes)}
+              className={`chip ${selectedTypes.length === SHOT_TYPE_KEYS.length ? 'active' : ''}`}
+              onClick={() => setSelectedTypes(SHOT_TYPE_KEYS)}
               title="Show all shot types"
             >
               ALL
             </button>
-            {SHOT_TYPES.filter((t) => availableTypes.includes(t.key)).map((t) => (
-              <button
-                key={t.key}
-                className={`chip ${selectedTypes.includes(t.key) ? 'active' : ''}`}
-                onClick={(e) => clickType(t.key, e)}
-                title="Click to focus on just this type · Cmd/Ctrl-click to add to selection"
-              >
-                {t.label}
-              </button>
-            ))}
+            {/*
+              Render every shot type, not just the ones that currently exist
+              in the data. Otherwise the user can't filter to "show me my
+              pitches" until they've already tagged at least one — chicken
+              and egg. Types with zero shots are visually dimmed so the user
+              can see at a glance which categories actually have data.
+            */}
+            {SHOT_TYPES.map((t) => {
+              const hasShots = availableTypes.includes(t.key);
+              return (
+                <button
+                  key={t.key}
+                  className={`chip ${selectedTypes.includes(t.key) ? 'active' : ''}`}
+                  onClick={(e) => clickType(t.key, e)}
+                  title={hasShots
+                    ? "Click to focus on just this type · Cmd/Ctrl-click to add to selection"
+                    : `No shots tagged ${t.label} yet`}
+                  style={hasShots ? {} : { opacity: 0.45 }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

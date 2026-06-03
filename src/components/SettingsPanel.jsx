@@ -12,9 +12,14 @@ import { useEffect, useRef, useState } from 'react';
 export default function SettingsPanel({
   users, activeUserId,
   onSelectUser, onEditUser, onAddUser, onDeleteUser,
+  // Orphans: shots whose userId points at a user that no longer exists.
+  // Typical after restoring a v1 backup on a fresh device. Pass null to
+  // hide the orphans section entirely (e.g. while loading).
+  orphanCount, onReattributeOrphans,
   onClose,
 }) {
   const ref = useRef();
+  const [reattributing, setReattributing] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -85,6 +90,43 @@ export default function SettingsPanel({
           + Add player
         </button>
       </div>
+      {orphanCount > 0 && (
+        <div className="settings-section">
+          <div className="settings-section-title">Data attribution</div>
+          <div style={{
+            padding: 10,
+            background: 'rgba(251,191,36,0.08)',
+            border: '1px solid rgba(251,191,36,0.4)',
+            borderRadius: 4,
+            fontSize: 12,
+            color: 'var(--text)',
+            lineHeight: 1.5,
+          }}>
+            <div style={{ marginBottom: 8 }}>
+              <strong style={{ color: 'var(--amber)' }}>{orphanCount}</strong>{' '}
+              shot{orphanCount === 1 ? '' : 's'} reference a player that doesn't
+              exist on this device. Typical after restoring a backup from another
+              device — the shots came along, but their player record didn't.
+            </div>
+            <button
+              className="btn-secondary"
+              style={{ width: '100%', padding: '6px 10px', fontSize: 11 }}
+              disabled={reattributing}
+              onClick={async () => {
+                setReattributing(true);
+                try {
+                  await onReattributeOrphans();
+                } finally {
+                  setReattributing(false);
+                }
+              }}
+              title="Reassign these shots to your active player"
+            >
+              {reattributing ? 'Re-attributing…' : `Re-attribute to active player`}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

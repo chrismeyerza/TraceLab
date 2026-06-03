@@ -10,6 +10,7 @@ import { parseForesightFile } from './lib/parser';
 import {
   getUsers, getActiveUserId, setActiveUserId,
   addUser, updateUser, deleteUser, backfillShotUsers,
+  surveyOrphanedShots, reattributeOrphans,
 } from './lib/users';
 import { collectTags, shotHasAnyTag, renameTagInShots, deleteTagFromShots } from './lib/tags';
 import TopBar from './components/TopBar';
@@ -19,6 +20,7 @@ import EmptyState from './components/EmptyState';
 import ConfirmDialog from './components/ConfirmDialog';
 import UserModal from './components/UserModal';
 import WelcomeModal from './components/WelcomeModal';
+import DeleteUserModal from './components/DeleteUserModal';
 import SettingsPanel from './components/SettingsPanel';
 import ImportUserModal from './components/ImportUserModal';
 import OverviewView from './views/OverviewView';
@@ -81,6 +83,10 @@ export default function App() {
   // First-launch welcome screen — shown when no users exist. Offers two
   // paths: restore from backup or create a fresh profile.
   const [showWelcome, setShowWelcome] = useState(false);
+  // User to delete — when set, shows the cascade-aware DeleteUserModal which
+  // surveys the user's shot count and offers reassign / delete-with-shots /
+  // cancel. Replaces the previous naive native confirm() flow.
+  const [userToDelete, setUserToDelete] = useState(null);
   const [userModalMode, setUserModalMode] = useState(null); // 'add' | 'edit' | null
   const [userModalInitial, setUserModalInitial] = useState(null);
   // Pending CSV/XLSX import waiting for user attribution. Holds the parsed
@@ -129,6 +135,15 @@ export default function App() {
   }, []);
 
   const allClubs = useMemo(() => orderedClubs([...new Set(shots.map((s) => s.club))]), [shots]);
+
+  // Count shots whose userId points at a user that doesn't exist on this
+  // device. Surfaces in Settings when > 0 so the user can one-click reassign
+  // them to the active player. Typical state after restoring a v1 backup
+  // (which didn't include user records) on a fresh device.
+  const orphanCount = useMemo(
+    () => surveyOrphanedShots(shots, users).totalOrphans,
+    [shots, users]
+  );
 
   // Distinct shot types present in the data. The TYPES filter row is shown
   // whenever there are any shots — even with only Full shots, we display the
@@ -491,15 +506,89 @@ export default function App() {
     setUserModalMode('edit');
   }
 
+  /**
+   * Begin the user-deletion flow. Doesn't delete immediately — opens the
+   * DeleteUserModal which surveys the shot count and presents the choice
+   * between reassign, delete-with-shots, and cancel. The actual delete
+   * happens in handleReassignAndDelete or handleDeleteWithShots.
+   */
   function handleDeleteUserConfirmed(id) {
-    if (!confirm(`Delete this user? Their shots stay in the database but become unattributed.`)) return;
-    deleteUser(id);
+    const u = users.find((x) => x.id === id);
+    if (!u) return;
+    setUserToDelete(u);
+  }
+
+  /**
+   * Reassign every shot owned by userToDelete to targetUserId, then delete
+   * the user profile. Safe option — no data is lost, only the player
+   * identity is consolidated.
+   */
+  async function handleReassignAndDelete(targetUserId) {
+    if (!userToDelete) return;
+    const owned = shots.filter((s) => s.userId === userToDelete.id);
+    if (owned.length) {
+      const updates = owned.map((s) => ({ id: s.id, patch: { userId: targetUserId } }));
+      await updateShots(updates);
+      const reloaded = await getAllShots();
+      setShots(reloaded);
+    }
+    // If the active user is the one being deleted, switch active to target
+    if (activeUserId === userToDelete.id) {
+      setActiveUserId(targetUserId);
+      setActiveUserIdState(targetUserId);
+    }
+    deleteUser(userToDelete.id);
     refreshUsers();
+    setUserToDelete(null);
+  }
+
+  /**
+   * Delete every shot owned by userToDelete, then delete the user. The
+   * destructive option — only used when the user (and their data) was a
+   * genuine mistake. DeleteUserModal already required the user to type
+   * the player's name to reach this handler, so no further confirm here.
+   */
+  async function handleDeleteWithShots() {
+    if (!userToDelete) return;
+    const owned = shots.filter((s) => s.userId === userToDelete.id);
+    for (const s of owned) {
+      await deleteShot(s.id);
+    }
+    const reloaded = await getAllShots();
+    setShots(reloaded);
+    // If we just deleted the active user, fall back to whichever player
+    // is still around. If none remain, the next reload will show the
+    // welcome screen — which is the right state.
+    if (activeUserId === userToDelete.id) {
+      const remaining = getUsers().filter((u) => u.id !== userToDelete.id);
+      if (remaining.length) {
+        setActiveUserId(remaining[0].id);
+        setActiveUserIdState(remaining[0].id);
+      }
+    }
+    deleteUser(userToDelete.id);
+    refreshUsers();
+    setUserToDelete(null);
   }
 
   function handleAddUserFromSettings() {
     setUserModalInitial(null);
     setUserModalMode('add');
+  }
+
+  /**
+   * Move all orphaned shots (userId missing OR pointing at a user that
+   * doesn't exist in localStorage) onto the active user. The Settings
+   * panel surfaces this when orphanCount > 0 so the user can fix the
+   * attribution in one click.
+   */
+  async function handleReattributeOrphans() {
+    if (!activeUserId) return;
+    const moved = await reattributeOrphans(getAllShots, updateShots, users, activeUserId);
+    if (moved) {
+      const reloaded = await getAllShots();
+      setShots(reloaded);
+    }
   }
 
   /**
@@ -571,6 +660,17 @@ export default function App() {
         />
       )}
 
+      {userToDelete && (
+        <DeleteUserModal
+          user={userToDelete}
+          shotCount={shots.filter((s) => s.userId === userToDelete.id).length}
+          otherUsers={users.filter((u) => u.id !== userToDelete.id)}
+          onReassign={handleReassignAndDelete}
+          onDeleteWithShots={handleDeleteWithShots}
+          onCancel={() => setUserToDelete(null)}
+        />
+      )}
+
       {showSettings && (
         <SettingsPanel
           users={users}
@@ -579,6 +679,8 @@ export default function App() {
           onEditUser={handleEditUser}
           onAddUser={handleAddUserFromSettings}
           onDeleteUser={handleDeleteUserConfirmed}
+          orphanCount={orphanCount}
+          onReattributeOrphans={handleReattributeOrphans}
           onClose={() => setShowSettings(false)}
         />
       )}

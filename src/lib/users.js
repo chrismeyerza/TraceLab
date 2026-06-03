@@ -137,3 +137,45 @@ export async function backfillShotUsers(getAllShots, updateShotsBulk, fallbackUs
   await updateShotsBulk(updates);
   return needs.length;
 }
+
+/**
+ * Survey orphaned shots: shots whose userId either is missing OR points to
+ * a user that no longer exists in localStorage. Returns a breakdown by
+ * orphan-userId so the UI can show "96 shots reference an unknown player
+ * (u_ek8ap1hw); 12 shots have no player assigned".
+ *
+ * This is the typical post-import situation when you bring shots in from
+ * a v1 backup and the user records didn't come along — the shots' userIds
+ * point at user records that don't exist on the receiving device.
+ *
+ * Returns { totalOrphans, byUserId: { [missingId|'__none__']: count } }.
+ */
+export function surveyOrphanedShots(shots, users) {
+  const knownIds = new Set(users.map((u) => u.id));
+  const byUserId = {};
+  let totalOrphans = 0;
+  for (const s of shots) {
+    if (!s.userId) {
+      byUserId.__none__ = (byUserId.__none__ || 0) + 1;
+      totalOrphans++;
+    } else if (!knownIds.has(s.userId)) {
+      byUserId[s.userId] = (byUserId[s.userId] || 0) + 1;
+      totalOrphans++;
+    }
+  }
+  return { totalOrphans, byUserId };
+}
+
+/**
+ * Reassign all orphaned shots (no userId or unknown userId) to the given
+ * target user. Returns the number of shots touched.
+ */
+export async function reattributeOrphans(getAllShots, updateShotsBulk, users, targetUserId) {
+  const all = await getAllShots();
+  const knownIds = new Set(users.map((u) => u.id));
+  const orphans = all.filter((s) => !s.userId || !knownIds.has(s.userId));
+  if (!orphans.length) return 0;
+  const updates = orphans.map((s) => ({ id: s.id, patch: { userId: targetUserId } }));
+  await updateShotsBulk(updates);
+  return orphans.length;
+}
