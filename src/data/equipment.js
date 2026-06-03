@@ -138,7 +138,7 @@ export const EQUIPMENT_BY_CATEGORY = {
   wedge: [
     {
       brand: 'Vokey',
-      models: ['SM10', 'SM9', 'SM8'],
+      models: ['SM11', 'SM10', 'SM9', 'SM8'],
     },
     {
       brand: 'Cleveland',
