@@ -132,15 +132,44 @@ export async function addShots(shots) {
  *
  * Returns a Blob ready to be saved via the browser's download mechanism.
  */
+/**
+ * Export the entire shot store as a portable JSON file. Format (v2):
+ *
+ *   {
+ *     tracelab: { version: 2, exportedAt: "...", shotCount: N, userCount: M },
+ *     users:  [ {...}, ... ],   // player profiles (id preserved so shots link)
+ *     shots:  [ {...}, ... ],   // shot records (id stripped — DB-local)
+ *   }
+ *
+ * v2 added users so cross-device restore (where the new browser has no
+ * profiles) brings player identity along. The user `id` is preserved on
+ * export and import because the shots' `userId` field references it —
+ * regenerating ids on restore would orphan attribution.
+ *
+ * Backwards compatible: importer accepts v1 (shots only) and v2 (shots +
+ * users) payloads. The `tracelab` envelope is the recognition marker.
+ *
+ * Returns a Blob ready to be saved via the browser's download mechanism.
+ */
 export async function exportAllShotsAsJson() {
   const shots = await getAllShots();
-  // Strip per-DB autoincrement `id`; receiving DB will mint fresh ones.
+  // Users come from localStorage, read lazily here so the storage module
+  // doesn't need to import the users module (avoids a circular dep).
+  let users = [];
+  try {
+    const raw = localStorage.getItem('tracelab_users');
+    if (raw) users = JSON.parse(raw) || [];
+  } catch {
+    users = [];
+  }
   const payload = {
     tracelab: {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       shotCount: shots.length,
+      userCount: users.length,
     },
+    users,
     shots: shots.map(({ id, ...rest }) => rest),
   };
   const json = JSON.stringify(payload, null, 2);
@@ -160,12 +189,21 @@ export function makeExportFilename() {
 
 /**
  * Validate and import a JSON payload produced by exportAllShotsAsJson.
- * Returns { added, skipped, total } on success.
+ * Returns { added, skipped, total, usersAdded } on success.
  *
- * Dedupe semantics: identical to addShots() — skips any incoming shot whose
- * dedup key already exists locally. So importing a file containing shots you
- * already have is a no-op for those shots; you never lose local edits (e.g.
- * club relabels) to existing data.
+ * Accepts v1 (shots-only) and v2 (shots + users) backups.
+ *
+ * Dedupe semantics for shots: identical to addShots() — skips any incoming
+ * shot whose dedup key already exists locally. So importing a file
+ * containing shots you already have is a no-op for those shots; you never
+ * lose local edits (e.g. club relabels) to existing data.
+ *
+ * For users (v2 only): each incoming user is merged into localStorage.
+ * - If a user with the same id already exists, the incoming one is skipped
+ *   (local edits take precedence; the imported version is treated as the
+ *   older copy).
+ * - If a user with the same id does not exist, the user is added verbatim
+ *   with id preserved (so any shots referencing that userId still link).
  *
  * Throws on:
  *   - JSON parse failure
@@ -183,22 +221,48 @@ export async function importShotsFromJson(jsonText) {
   if (!payload || typeof payload !== 'object' || !payload.tracelab) {
     throw new Error('Missing TraceLab envelope. This file does not look like a TraceLab export.');
   }
-  if (payload.tracelab.version !== 1) {
-    throw new Error(`Unknown export schema version: ${payload.tracelab.version}. This build understands version 1.`);
+  const ver = payload.tracelab.version;
+  if (ver !== 1 && ver !== 2) {
+    throw new Error(`Unknown export schema version: ${ver}. This build understands versions 1 and 2.`);
   }
   if (!Array.isArray(payload.shots)) {
     throw new Error('Invalid file: shots field is missing or not an array.');
   }
+
+  // Merge users first (v2 only) — so that when shots come in carrying
+  // userId references, the users they point to already exist locally.
+  let usersAdded = 0;
+  if (ver === 2 && Array.isArray(payload.users)) {
+    let existing = [];
+    try {
+      const raw = localStorage.getItem('tracelab_users');
+      if (raw) existing = JSON.parse(raw) || [];
+    } catch { existing = []; }
+    const existingIds = new Set(existing.map((u) => u.id));
+    const incoming = payload.users.filter((u) => u && u.id && !existingIds.has(u.id));
+    if (incoming.length > 0) {
+      const merged = [...existing, ...incoming];
+      localStorage.setItem('tracelab_users', JSON.stringify(merged));
+      // Set active user to the first incoming one if there's no active user
+      // currently. Caller flow: fresh device with no profile → restore →
+      // user becomes the active player without an extra modal.
+      if (!localStorage.getItem('tracelab_active_user')) {
+        localStorage.setItem('tracelab_active_user', incoming[0].id);
+      }
+      usersAdded = incoming.length;
+    }
+  }
+
   const total = payload.shots.length;
   if (total === 0) {
-    return { added: 0, skipped: 0, total: 0 };
+    return { added: 0, skipped: 0, total: 0, usersAdded };
   }
   // Strip any id field present in the file (shouldn't be — we strip on
   // export — but belt and braces; an old file or hand-edited one might
   // include it, and addShots would honour it which we don't want).
   const sanitised = payload.shots.map(({ id, ...rest }) => rest);
   const { added, skipped } = await addShots(sanitised);
-  return { added, skipped, total };
+  return { added, skipped, total, usersAdded };
 }
 
 export async function clearAllShots() {

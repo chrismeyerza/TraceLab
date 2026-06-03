@@ -386,7 +386,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
             </div>
             <div style={{ flex: 1 }} />
             <button className="btn-secondary" onClick={() => { setBulkLabelOpen(true); setBulkTypeOpen(false); setBulkEquipOpen(false); }}>
-              Relabel club
+              Reassign club
             </button>
             <button className="btn-secondary" onClick={() => { setBulkTypeOpen(true); setBulkLabelOpen(false); setBulkEquipOpen(false); }}>
               Set type
@@ -421,7 +421,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                 setSelected(new Set());
               }}
               onClose={() => setBulkLabelOpen(false)}
-              label={`Relabel ${selected.size} shot${selected.size === 1 ? '' : 's'} as:`}
+              label={`Reassign ${selected.size} shot${selected.size === 1 ? '' : 's'} as:`}
             />
           )}
           {bulkTypeOpen && (
@@ -559,7 +559,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                         background: `${clubColor(s.club)}22`,
                         color: clubColor(s.club),
                       }}
-                      title="Click to relabel · type a tag like '7i [Mizuno]' for testing variants"
+                      title="Click to reassign this shot to a different club"
                     >
                       {s.club}
                       <span className="club-chip-edit-pencil">✎</span>
@@ -759,6 +759,7 @@ function ClubPicker({ clubs, onPick, onClose, label, current, compact }) {
 function TypePicker({ onPick, onClose, label, current }) {
   return (
     <div
+      onClick={(e) => e.stopPropagation()}
       style={{
         marginTop: 8, padding: 12,
         background: 'var(--bg-elev-3)',
@@ -827,6 +828,7 @@ function EquipmentPicker({ onPick, onClose, label, current, category }) {
 
   return (
     <div
+      onClick={(e) => e.stopPropagation()}
       style={{
         marginTop: 8, padding: 12,
         background: 'var(--bg-elev-3)',

@@ -18,6 +18,7 @@ import ScopeSummary from './components/ScopeSummary';
 import EmptyState from './components/EmptyState';
 import ConfirmDialog from './components/ConfirmDialog';
 import UserModal from './components/UserModal';
+import WelcomeModal from './components/WelcomeModal';
 import SettingsPanel from './components/SettingsPanel';
 import ImportUserModal from './components/ImportUserModal';
 import OverviewView from './views/OverviewView';
@@ -77,6 +78,9 @@ export default function App() {
 
   // Modal & flow states
   const [showSettings, setShowSettings] = useState(false);
+  // First-launch welcome screen — shown when no users exist. Offers two
+  // paths: restore from backup or create a fresh profile.
+  const [showWelcome, setShowWelcome] = useState(false);
   const [userModalMode, setUserModalMode] = useState(null); // 'add' | 'edit' | null
   const [userModalInitial, setUserModalInitial] = useState(null);
   // Pending CSV/XLSX import waiting for user attribution. Holds the parsed
@@ -95,8 +99,11 @@ export default function App() {
   };
 
   // Initial load. User setup happens first so the first-launch modal can
-  // fire immediately if needed. Shots still load — they'll be backfilled to
-  // the user's id once the first-launch modal completes (see handleCreateUser).
+  // Initial load. User setup happens first so the welcome / first-launch
+  // flow can fire immediately. On a truly fresh device (no users, no shots),
+  // show the WelcomeModal — two paths, restore vs create. If shots exist
+  // but no users, we treat it as a partial state and offer first-launch
+  // create-profile (the user can still restore from backup later).
   useEffect(() => {
     (async () => {
       try {
@@ -107,23 +114,12 @@ export default function App() {
         setActiveUserIdState(getActiveUserId());
         const all = await getAllShots();
         if (existing.length === 0) {
-          // First launch: auto-seed a default user so the experience is
-          // "confirm/complete your profile" rather than "fill in a blank
-          // form". The user becomes active immediately, existing shots get
-          // backfilled to them, and we open the edit modal pre-filled so the
-          // person can set handicap + hand (and change the name if they want).
-          const seeded = addUser({ name: 'Chris Meyer', handicap: null, rightHanded: true });
-          await backfillShotUsers(getAllShots, updateShots, seeded.id);
-          const reloaded = await getAllShots();
-          setShots(reloaded);
-          setUsers(getUsers());
-          setActiveUserIdState(getActiveUserId());
-          // Open the edit modal on the seeded user so they can complete it.
-          setUserModalInitial(seeded);
-          setUserModalMode('firstLaunchEdit');
-        } else {
-          setShots(all);
+          // Show the welcome screen with the two paths. Don't seed anything
+          // yet — wait for the user's choice. This avoids the "duplicate
+          // Chris Meyer" problem when restoring on a new device.
+          setShowWelcome(true);
         }
+        setShots(all);
       } catch (e) {
         console.error(e);
       } finally {
@@ -372,23 +368,63 @@ export default function App() {
     setImportStatus({ status: 'loading', message: `Reading ${file.name}…` });
     try {
       const text = await file.text();
-      const { added, skipped, total } = await importShotsFromJson(text);
+      const { added, skipped, total, usersAdded } = await importShotsFromJson(text);
       const all = await getAllShots();
       setShots(all);
-      const detail =
+      // Refresh users in case the backup brought new player profiles in
+      // (v2 backup format includes users).
+      refreshUsers();
+      const shotsDetail =
         total === 0
-          ? 'Backup file contained no shots'
+          ? 'no shots'
           : skipped === 0
-          ? `Imported ${added} shots`
+          ? `${added} shots imported`
           : added === 0
-          ? `All ${total} shots already in your database — nothing to import`
-          : `Imported ${added} new shots · skipped ${skipped} duplicates`;
-      setImportStatus({ status: 'success', message: detail });
+          ? `${total} shots already in your database`
+          : `${added} new shots · ${skipped} duplicates skipped`;
+      const usersDetail = usersAdded ? ` · ${usersAdded} player${usersAdded === 1 ? '' : 's'} restored` : '';
+      setImportStatus({ status: 'success', message: shotsDetail + usersDetail });
       setTimeout(() => setImportStatus(null), 6000);
     } catch (e) {
       console.error(e);
       setImportStatus({ status: 'error', message: e.message || 'Import failed' });
     }
+  }
+
+  /**
+   * Welcome modal — restore path. User dropped a backup file. Run the
+   * import, then close the welcome screen. If the backup brought users
+   * along, we're done (player profile is restored). If it didn't (a v1
+   * shots-only backup), we still need to create a profile, so we fall
+   * through to the create-profile flow.
+   */
+  async function handleWelcomeRestore(file) {
+    await handleBackupImport(file);
+    // Re-check after the import resolved
+    const usersAfter = getUsers();
+    if (usersAfter.length === 0) {
+      // v1 backup or backup with no users — fall through to create flow
+      handleWelcomeCreate();
+    } else {
+      setShowWelcome(false);
+    }
+  }
+
+  /**
+   * Welcome modal — create path. Same as the previous first-launch flow:
+   * seed a default user, backfill any existing shots to them, then open
+   * the edit modal pre-filled so they can complete handicap / hand /
+   * change the name.
+   */
+  async function handleWelcomeCreate() {
+    const seeded = addUser({ name: 'Chris Meyer', handicap: null, rightHanded: true });
+    await backfillShotUsers(getAllShots, updateShots, seeded.id);
+    const reloaded = await getAllShots();
+    setShots(reloaded);
+    refreshUsers();
+    setUserModalInitial(seeded);
+    setUserModalMode('firstLaunchEdit');
+    setShowWelcome(false);
   }
 
   async function handleDeleteSession(id) {
@@ -527,6 +563,13 @@ export default function App() {
         settingsOpen={showSettings}
         onOpenSettings={() => setShowSettings((v) => !v)}
       />
+
+      {showWelcome && (
+        <WelcomeModal
+          onRestore={handleWelcomeRestore}
+          onCreate={handleWelcomeCreate}
+        />
+      )}
 
       {showSettings && (
         <SettingsPanel
