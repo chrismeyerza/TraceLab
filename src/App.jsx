@@ -12,6 +12,10 @@ import {
   addUser, updateUser, deleteUser, backfillShotUsers,
   surveyOrphanedShots, reattributeOrphans,
 } from './lib/users';
+import {
+  getBag, setBagEntry, getBagEntry,
+  seedBagFromShots, stampEquipmentFromBag, deleteBag,
+} from './lib/bag';
 import { collectTags, shotHasAnyTag, renameTagInShots, deleteTagFromShots } from './lib/tags';
 import TopBar from './components/TopBar';
 import FilterBar from './components/FilterBar';
@@ -124,6 +128,21 @@ export default function App() {
           // yet — wait for the user's choice. This avoids the "duplicate
           // Chris Meyer" problem when restoring on a new device.
           setShowWelcome(true);
+        } else {
+          // PR 4.18 bag-seeding migration. For any user without a bag yet,
+          // build one from their existing shots' equipment values (majority
+          // wins per club). Idempotent: seedBagFromShots only fills gaps,
+          // existing bag entries are never overwritten. A localStorage flag
+          // marks the migration as having run once for each user so we
+          // don't repeatedly try to top up after the user deletes a bag
+          // entry deliberately.
+          for (const u of existing) {
+            const flagKey = `tracelab_bag_seeded_${u.id}`;
+            if (!localStorage.getItem(flagKey)) {
+              seedBagFromShots(u.id, all);
+              localStorage.setItem(flagKey, '1');
+            }
+          }
         }
         setShots(all);
       } catch (e) {
@@ -134,7 +153,53 @@ export default function App() {
     })();
   }, []);
 
+  // Active user's bag. Kept in a state slice so edits trigger re-renders;
+  // the underlying source of truth is still localStorage via lib/bag.js.
+  // Refreshed any time the bag is mutated, the active user changes, or
+  // users change.
+  const [activeBag, setActiveBagState] = useState({});
+  useEffect(() => {
+    if (activeUserId) setActiveBagState(getBag(activeUserId));
+    else setActiveBagState({});
+  }, [activeUserId, users]);
+
   const allClubs = useMemo(() => orderedClubs([...new Set(shots.map((s) => s.club))]), [shots]);
+
+  // Clubs the active user has hit (subset of allClubs). The bag panel
+  // shows one row per club the user has data for, so this is the input.
+  const activeUserClubs = useMemo(() => {
+    if (!activeUserId) return [];
+    const set = new Set();
+    for (const s of shots) {
+      if (s.userId === activeUserId && s.club) set.add(s.club);
+    }
+    return orderedClubs([...set]);
+  }, [shots, activeUserId]);
+
+  // Standard club labels for the "Add club to bag" dropdown. Reasonable
+  // default set covering most golfers; users can pre-populate before they
+  // hit a club for the first time.
+  const standardClubLabels = useMemo(
+    () => ['Dr', '3w', '5w', '7w', '2h', '3h', '4h', '5h',
+           '2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i',
+           'PW', 'GW', '50°', '52°', '54°', '56°', '58°', '60°',
+           'SW', 'LW'],
+    []
+  );
+
+  // How many of the active user's shots have null equipment but their club
+  // is now in the bag → the "fill missing" action would fix them.
+  const missingEquipmentCount = useMemo(() => {
+    if (!activeUserId) return 0;
+    let count = 0;
+    for (const s of shots) {
+      if (s.userId !== activeUserId) continue;
+      if (s.equipment) continue; // already tagged
+      if (!s.club) continue;
+      if (activeBag[s.club]) count++;
+    }
+    return count;
+  }, [shots, activeUserId, activeBag]);
 
   // Count shots whose userId points at a user that doesn't exist on this
   // device. Surfaces in Settings when > 0 so the user can one-click reassign
@@ -300,7 +365,14 @@ export default function App() {
   async function commitImport(newShots, sessionLabel, userId) {
     setImportStatus({ status: 'loading', message: 'Importing…' });
     try {
-      const stamped = newShots.map((s) => ({ ...s, userId }));
+      // Stamp each shot with the user's current bag entry for that club.
+      // This is the core PR 4.18 behaviour: equipment is bag-driven, not
+      // edited per-shot. Shots whose club isn't in the bag get equipment=null.
+      const stamped = newShots.map((s) => {
+        const next = { ...s, userId };
+        stampEquipmentFromBag(next, userId);
+        return next;
+      });
       const { added, skipped } = await addShots(stamped);
       const all = await getAllShots();
       setShots(all);
@@ -537,6 +609,7 @@ export default function App() {
       setActiveUserId(targetUserId);
       setActiveUserIdState(targetUserId);
     }
+    deleteBag(userToDelete.id);
     deleteUser(userToDelete.id);
     refreshUsers();
     setUserToDelete(null);
@@ -566,6 +639,7 @@ export default function App() {
         setActiveUserIdState(remaining[0].id);
       }
     }
+    deleteBag(userToDelete.id);
     deleteUser(userToDelete.id);
     refreshUsers();
     setUserToDelete(null);
@@ -586,6 +660,53 @@ export default function App() {
     if (!activeUserId) return;
     const moved = await reattributeOrphans(getAllShots, updateShots, users, activeUserId);
     if (moved) {
+      const reloaded = await getAllShots();
+      setShots(reloaded);
+    }
+  }
+
+  /**
+   * Bag edit — change one club's equipment in the active user's bag.
+   * Does NOT retroactively update existing shots; the bag change applies
+   * to future imports and future club reassignments. This is the PR 4.18
+   * snapshot semantic: equipment is what the bag said at the time the
+   * shot was stamped.
+   *
+   * If you want existing shots to pick up the new bag entry, use the
+   * "Fill missing equipment from bag" action (handleFillMissing below),
+   * which only fills NULL equipment fields — never overwrites a shot's
+   * existing stamped value.
+   */
+  function handleSetBagEntry(club, equipment) {
+    if (!activeUserId) return;
+    setBagEntry(activeUserId, club, equipment);
+    setActiveBagState(getBag(activeUserId));
+  }
+
+  /**
+   * Stamp every "missing-equipment" shot from the current bag. A shot
+   * qualifies if its userId matches the active user, its equipment is null,
+   * its club has an entry in the bag. Shots already tagged stay as-is —
+   * the bag never retroactively overwrites stamped equipment.
+   */
+  async function handleFillMissingEquipment() {
+    if (!activeUserId) return;
+    const bag = getBag(activeUserId);
+    const updates = [];
+    for (const s of shots) {
+      if (s.userId !== activeUserId) continue;
+      if (s.equipment) continue;
+      if (!s.club) continue;
+      const entry = bag[s.club];
+      if (!entry) continue;
+      updates.push({ id: s.id, patch: { equipment: entry } });
+    }
+    if (updates.length) {
+      // Use the raw lib updateShots so we don't go through
+      // augmentPatchWithBagEquipment, which would clobber our equipment
+      // value with a re-lookup (would still produce the same answer, but
+      // it's cleaner to bypass).
+      await updateShots(updates);
       const reloaded = await getAllShots();
       setShots(reloaded);
     }
@@ -614,13 +735,47 @@ export default function App() {
     setShots((curr) => curr.filter((s) => s.id !== id));
   }
 
+  /**
+   * Augment a patch so that when it changes a shot's `club`, the
+   * `equipment` field is automatically updated to match the new club's
+   * entry in the user's bag. If the new club isn't in the bag, equipment
+   * is set to null (the explicit "no equipment for this club yet" state).
+   *
+   * Implements the PR 4.18 invariant: equipment follows the club via the
+   * bag. The user never edits equipment per-shot; reassigning a shot to
+   * a different club auto-updates its equipment to whatever the bag says
+   * for that club at that moment.
+   *
+   * Skips augmentation when:
+   *   - patch doesn't change club (nothing to do)
+   *   - patch already specifies equipment (caller wins, escape hatch)
+   *   - shot has no userId (can't look up which user's bag)
+   */
+  function augmentPatchWithBagEquipment(shot, patch) {
+    if (!patch || !('club' in patch)) return patch;
+    if ('equipment' in patch) return patch;
+    if (!shot?.userId) return patch;
+    const entry = getBagEntry(shot.userId, patch.club);
+    // entry === null if the new club isn't in the bag → set equipment=null
+    // explicitly so the shot reflects "no equipment for this club".
+    return { ...patch, equipment: entry };
+  }
+
   async function handleUpdateShot(id, patch) {
-    const updated = await updateShot(id, patch);
+    const shot = shots.find((s) => s.id === id);
+    const finalPatch = augmentPatchWithBagEquipment(shot, patch);
+    const updated = await updateShot(id, finalPatch);
     if (updated) setShots((curr) => curr.map((s) => (s.id === id ? updated : s)));
   }
 
   async function handleUpdateShots(updates) {
-    const result = await updateShots(updates);
+    // Augment each update individually — each shot may belong to a different
+    // user, so the bag lookup is per-shot.
+    const finalUpdates = updates.map(({ id, patch }) => {
+      const shot = shots.find((s) => s.id === id);
+      return { id, patch: augmentPatchWithBagEquipment(shot, patch) };
+    });
+    const result = await updateShots(finalUpdates);
     if (result.length) {
       const byId = new Map(result.map((r) => [r.id, r]));
       setShots((curr) => curr.map((s) => byId.get(s.id) || s));
@@ -681,6 +836,13 @@ export default function App() {
           onDeleteUser={handleDeleteUserConfirmed}
           orphanCount={orphanCount}
           onReattributeOrphans={handleReattributeOrphans}
+          activeUser={activeUser}
+          activeBag={activeBag}
+          onSetBagEntry={handleSetBagEntry}
+          userClubs={activeUserClubs}
+          allClubLabels={standardClubLabels}
+          missingEquipmentCount={missingEquipmentCount}
+          onFillMissingEquipment={handleFillMissingEquipment}
           onClose={() => setShowSettings(false)}
         />
       )}

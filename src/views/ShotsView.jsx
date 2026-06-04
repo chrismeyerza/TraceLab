@@ -286,11 +286,11 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
   const [editing, setEditing] = useState(null); // shotId for inline picker
   const [bulkLabelOpen, setBulkLabelOpen] = useState(false);
   const [bulkTypeOpen, setBulkTypeOpen] = useState(false);
-  const [bulkEquipOpen, setBulkEquipOpen] = useState(false);
   const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
   const [bulkTagsDraft, setBulkTagsDraft] = useState([]);
   const [editingType, setEditingType] = useState(null); // shotId for inline type picker
-  const [editingEquip, setEditingEquip] = useState(null); // shotId for inline equip picker
+  // editingEquip state removed in PR 4.18 — equipment is no longer per-shot
+  // editable. Equipment comes from the user's bag (see Settings → Bag).
   const [editingTags, setEditingTags] = useState(null); // shotId for inline tag editor
 
   // userId → display name lookup. Memoised on the users list. Unknown ids
@@ -385,16 +385,13 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
               {selected.size} shot{selected.size === 1 ? '' : 's'} selected
             </div>
             <div style={{ flex: 1 }} />
-            <button className="btn-secondary" onClick={() => { setBulkLabelOpen(true); setBulkTypeOpen(false); setBulkEquipOpen(false); }}>
+            <button className="btn-secondary" onClick={() => { setBulkLabelOpen(true); setBulkTypeOpen(false) }}>
               Reassign club
             </button>
-            <button className="btn-secondary" onClick={() => { setBulkTypeOpen(true); setBulkLabelOpen(false); setBulkEquipOpen(false); }}>
+            <button className="btn-secondary" onClick={() => { setBulkTypeOpen(true); setBulkLabelOpen(false) }}>
               Set type
             </button>
-            <button className="btn-secondary" onClick={() => { setBulkEquipOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); setBulkTagsOpen(false); }}>
-              Set equipment
-            </button>
-            <button className="btn-secondary" onClick={() => { setBulkTagsOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); setBulkEquipOpen(false); setBulkTagsDraft([]); }}>
+            <button className="btn-secondary" onClick={() => { setBulkTagsOpen(true); setBulkLabelOpen(false); setBulkTypeOpen(false); setBulkTagsDraft([]); }}>
               Set tags
             </button>
             <button
@@ -436,51 +433,6 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
               label={`Set type for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
             />
           )}
-          {bulkEquipOpen && (() => {
-            // Bulk equipment tagging only makes sense when all selected shots
-            // belong to the same club category — tagging a driver and an
-            // iron with "Callaway Rogue ST" is nonsense. So we look at the
-            // selected shots; if they span categories, refuse with a clear
-            // message; otherwise show the picker filtered to that category.
-            const selectedShots = shots.filter((s) => selected.has(s.id));
-            const cats = new Set(selectedShots.map((s) => clubCategory(s.club)));
-            if (cats.size > 1) {
-              return (
-                <div
-                  style={{
-                    marginTop: 8, padding: 12,
-                    background: 'var(--bg-elev-3)',
-                    border: '1px solid var(--amber)',
-                    borderRadius: 6,
-                    fontSize: 12, color: 'var(--text)',
-                  }}
-                >
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Can't bulk-tag mixed equipment categories</div>
-                  <div style={{ color: 'var(--text-dim)', marginBottom: 8 }}>
-                    Selected shots span multiple club categories ({[...cats].join(', ')}).
-                    Equipment tags are category-specific — pick shots from one category at a time.
-                  </div>
-                  <button className="btn-secondary" style={{ padding: '3px 10px', fontSize: 10 }} onClick={() => setBulkEquipOpen(false)}>
-                    CLOSE
-                  </button>
-                </div>
-              );
-            }
-            const sharedCategory = [...cats][0] || 'iron';
-            return (
-              <EquipmentPicker
-                category={sharedCategory}
-                onPick={async (equip) => {
-                  const updates = [...selected].map((id) => ({ id, patch: { equipment: equip } }));
-                  await onUpdateShots(updates);
-                  setBulkEquipOpen(false);
-                  setSelected(new Set());
-                }}
-                onClose={() => setBulkEquipOpen(false)}
-                label={`Set equipment for ${selected.size} shot${selected.size === 1 ? '' : 's'}:`}
-              />
-            );
-          })()}
           {bulkTagsOpen && (
             <BulkTagsPanel
               draft={bulkTagsDraft}
@@ -586,7 +538,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                     if (c === 'shotType') {
                       return (
                         <td key={col.key} style={{ ...style, cursor: 'pointer' }}
-                            onClick={() => { setEditingType(editingType === s.id ? null : s.id); setEditingEquip(null); setEditingTags(null); }}
+                            onClick={() => { setEditingType(editingType === s.id ? null : s.id); setEditingTags(null); }}
                             title="Click to set shot type">
                           <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
                           {editingType === s.id && (
@@ -600,24 +552,13 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                         </td>
                       );
                     }
-                    if (c === 'equipment') {
-                      return (
-                        <td key={col.key} style={{ ...style, cursor: 'pointer' }}
-                            onClick={() => { setEditingEquip(editingEquip === s.id ? null : s.id); setEditingType(null); setEditingTags(null); }}
-                            title="Click to set equipment">
-                          <span style={{ borderBottom: '1px dotted var(--text-faint)' }}>{col.render(s)}</span>
-                          {editingEquip === s.id && (
-                            <EquipmentPicker
-                              current={s.equipment}
-                              category={clubCategory(s.club)}
-                              onPick={async (equip) => { await onUpdateShot(s.id, { equipment: equip }); setEditingEquip(null); }}
-                              onClose={() => setEditingEquip(null)}
-                              label="Set equipment:"
-                            />
-                          )}
-                        </td>
-                      );
-                    }
+                    // Equipment column intentionally read-only as of PR 4.18.
+                    // Equipment is now stamped from the user's bag at import
+                    // and on club reassignment — not edited per-shot. To
+                    // change equipment you set it once in your bag (Settings
+                    // → Bag) and it applies to future imports and any
+                    // reassignment. Existing shots keep their stamped value
+                    // (snapshot semantic).
                     if (c === 'tags') {
                       const isEditing = editingTags === s.id;
                       return (
@@ -627,7 +568,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                               if (!isEditing) {
                                 setEditingTags(s.id);
                                 setEditingType(null);
-                                setEditingEquip(null);
+                               
                               }
                             }}
                             title={isEditing ? '' : 'Click to edit tags'}>
