@@ -158,7 +158,7 @@ export const EQUIPMENT_BY_CATEGORY = {
     },
     {
       brand: 'Ping',
-      models: ['s159', 'Glide 4.0', 'G440', 'Glide Forged Pro'],
+      models: ['s159', 'Glide 4.0', 'G400', 'Glide Forged Pro'],
     },
   ],
 };

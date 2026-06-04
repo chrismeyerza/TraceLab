@@ -33,6 +33,7 @@ export default function TopBar({
     ['flight', 'Flight'],
     ['distance', 'Distance'],
     ['shape', 'Shape'],
+    ['trends', 'Trends'],
   ];
   return (
     <header className="topbar">
