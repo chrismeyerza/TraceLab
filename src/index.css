@@ -284,30 +284,42 @@
   }
   .trend-range-track {
     position: relative;
-    height: 8px;
+    height: 10px;
     background: var(--bg-elev-3);
     border-radius: 4px;
-    overflow: visible;
+    overflow: hidden;
+  }
+  .trend-range-heatmap {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .trend-range-bin {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--text);
   }
   .trend-range-mean {
     position: absolute;
-    left: 50%;
     top: 0;
     bottom: 0;
     width: 1px;
     background: var(--text-faint);
     transform: translateX(-0.5px);
+    z-index: 2;
   }
   .trend-range-today {
     position: absolute;
     top: 50%;
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     background: var(--green);
     border: 1.5px solid var(--bg-elev-2);
     transform: translate(-50%, -50%);
     box-shadow: 0 0 0 0.5px var(--green);
+    z-index: 3;
   }
   .trend-range-today.out-of-range {
     background: var(--red);
