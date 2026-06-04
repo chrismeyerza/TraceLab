@@ -202,6 +202,22 @@ export default function App() {
     return count;
   }, [shots, activeUserId, activeBag]);
 
+  // How many of the active user's shots are tagged with equipment that
+  // doesn't match the current bag — these are candidates for the
+  // "Overwrite equipment from bag" destructive action.
+  const overwriteCount = useMemo(() => {
+    if (!activeUserId) return 0;
+    let count = 0;
+    for (const s of shots) {
+      if (s.userId !== activeUserId) continue;
+      if (!s.club) continue;
+      const entry = activeBag[s.club];
+      if (!entry) continue;
+      if (s.equipment !== entry) count++;
+    }
+    return count;
+  }, [shots, activeUserId, activeBag]);
+
   // Count shots whose userId points at a user that doesn't exist on this
   // device. Surfaces in Settings when > 0 so the user can one-click reassign
   // them to the active player. Typical state after restoring a v1 backup
@@ -685,6 +701,21 @@ export default function App() {
   }
 
   /**
+   * Bulk version: set the same equipment string across a list of clubs in
+   * one operation. Used by the "Set equipment across multiple clubs"
+   * panel — most golfers buy iron sets, not individual irons, so being
+   * able to tag 5i through PW with one click is a real workflow.
+   *
+   * Same semantics as the single set: no retroactive updates to existing
+   * shots; future imports / reassignments get the new bag value.
+   */
+  function handleSetBagEntriesBulk(clubs, equipment) {
+    if (!activeUserId) return;
+    for (const c of clubs) setBagEntry(activeUserId, c, equipment);
+    setActiveBagState(getBag(activeUserId));
+  }
+
+  /**
    * Stamp every "missing-equipment" shot from the current bag. A shot
    * qualifies if its userId matches the active user, its equipment is null,
    * its club has an entry in the bag. Shots already tagged stay as-is —
@@ -707,6 +738,34 @@ export default function App() {
       // augmentPatchWithBagEquipment, which would clobber our equipment
       // value with a re-lookup (would still produce the same answer, but
       // it's cleaner to bypass).
+      await updateShots(updates);
+      const reloaded = await getAllShots();
+      setShots(reloaded);
+    }
+  }
+
+  /**
+   * Overwrite equipment on every shot where the stamped value disagrees
+   * with the bag's current entry for that club. Used when the user has
+   * corrected a bag entry after shots were already stamped wrong (e.g.
+   * the migration seeded a club to the wrong equipment).
+   *
+   * Destructive — wipes the snapshot semantic for the affected shots. The
+   * UI confirms before calling this handler.
+   */
+  async function handleOverwriteFromBag() {
+    if (!activeUserId) return;
+    const bag = getBag(activeUserId);
+    const updates = [];
+    for (const s of shots) {
+      if (s.userId !== activeUserId) continue;
+      if (!s.club) continue;
+      const entry = bag[s.club];
+      if (!entry) continue; // no bag entry → don't touch
+      if (s.equipment === entry) continue; // already matches
+      updates.push({ id: s.id, patch: { equipment: entry } });
+    }
+    if (updates.length) {
       await updateShots(updates);
       const reloaded = await getAllShots();
       setShots(reloaded);
@@ -840,10 +899,13 @@ export default function App() {
           activeUser={activeUser}
           activeBag={activeBag}
           onSetBagEntry={handleSetBagEntry}
+          onSetBagEntriesBulk={handleSetBagEntriesBulk}
           userClubs={activeUserClubs}
           allClubLabels={standardClubLabels}
           missingEquipmentCount={missingEquipmentCount}
           onFillMissingEquipment={handleFillMissingEquipment}
+          overwriteCount={overwriteCount}
+          onOverwriteFromBag={handleOverwriteFromBag}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -936,6 +998,7 @@ export default function App() {
             {view === 'trends' && (
               <TrendsView
                 shots={filteredShots}
+                allShots={shots}
                 allClubs={allClubs}
                 units={units}
                 pinnedSession={pinnedSession}

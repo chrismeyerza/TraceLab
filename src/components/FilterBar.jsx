@@ -190,19 +190,45 @@ export default function FilterBar({
             </button>
           ))}
           {pinnedSession && (
-            <button
-              className="chip active"
-              onClick={() => setPinnedSession(null)}
-              title="Click to clear the session filter"
+            <div
+              className="chip pin-chip"
+              title={`Session pinned: ${pinnedSession.label}`}
               style={{
                 background: 'var(--blue)',
                 borderColor: 'var(--blue)',
                 color: '#0a0e0c',
                 boxShadow: '0 0 0 1px var(--bg-elev-1), 0 0 0 2px var(--blue)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 4px 2px 8px',
               }}
             >
-              {pinnedSession.label} ×
-            </button>
+              <span style={{ fontFamily: 'JetBrains Mono', fontSize: 10 }}>
+                📌 {pinnedSession.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPinnedSession(null)}
+                title="Unpin this session"
+                aria-label="Unpin session"
+                style={{
+                  background: 'rgba(0,0,0,0.18)',
+                  border: 'none',
+                  color: '#0a0e0c',
+                  borderRadius: '50%',
+                  width: 16,
+                  height: 16,
+                  lineHeight: '14px',
+                  padding: 0,
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
+              >
+                ×
+              </button>
+            </div>
           )}
         </div>
       </div>

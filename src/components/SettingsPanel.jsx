@@ -20,9 +20,10 @@ export default function SettingsPanel({
   // Bag editor — per-user equipment-by-club mapping. The panel renders
   // a BagPanel for the active user (only one bag is editable at a time
   // to keep the UI focused; users switch active player to edit their own).
-  activeUser, activeBag, onSetBagEntry,
+  activeUser, activeBag, onSetBagEntry, onSetBagEntriesBulk,
   userClubs, allClubLabels,
   missingEquipmentCount, onFillMissingEquipment,
+  overwriteCount, onOverwriteFromBag,
   onClose,
 }) {
   const ref = useRef();
@@ -105,10 +106,13 @@ export default function SettingsPanel({
             userName={activeUser.name}
             bag={activeBag || {}}
             onSetEntry={onSetBagEntry}
+            onSetEntriesBulk={onSetBagEntriesBulk}
             userClubs={userClubs || []}
             allClubLabels={allClubLabels || []}
             missingCount={missingEquipmentCount || 0}
             onFillMissing={onFillMissingEquipment}
+            overwriteCount={overwriteCount || 0}
+            onOverwriteFromBag={onOverwriteFromBag}
           />
         </div>
       )}

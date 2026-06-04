@@ -186,9 +186,9 @@ export default function SessionsView({
                     className="btn-secondary"
                     style={{ padding: '4px 10px', fontSize: 10 }}
                     onClick={() => onPinSession(s)}
-                    title="Filter all views to this session"
+                    title="Pin this session to the filter — analysis views narrow to its shots; Trends → Today vs baseline uses it"
                   >
-                    VIEW
+                    PIN
                   </button>
                   <button
                     className="btn-danger"

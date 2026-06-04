@@ -35,12 +35,18 @@ import { getBrandsForCategory } from '../data/equipment';
  */
 export default function BagPanel({
   userId, userName, bag,
-  onSetEntry,
+  onSetEntry, onSetEntriesBulk,
   userClubs, allClubLabels,
   onFillMissing, missingCount,
+  onOverwriteFromBag, overwriteCount,
 }) {
   const [editingClub, setEditingClub] = useState(null); // which club row is open
   const [addingClub, setAddingClub] = useState(false);
+  // Bulk-tag mode: lets the user apply one equipment string across many
+  // clubs at once (e.g. tag the whole iron set as Ping G400 in one go).
+  // The picker is filtered by category — same category-aware constraint
+  // as the inline picker.
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   // Rows to render: union of clubs the user has hit AND clubs in the bag
   // (a bag entry can exist for a club without shots yet, if the user
@@ -129,6 +135,37 @@ export default function BagPanel({
         </div>
       )}
 
+      {/* Bulk: set one equipment across multiple clubs at once */}
+      {rowClubs.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          {!bulkOpen ? (
+            <button
+              className="btn-secondary"
+              style={{ width: '100%' }}
+              onClick={() => setBulkOpen(true)}
+              title="Tag many clubs with the same equipment in one step"
+            >
+              Set equipment across multiple clubs
+            </button>
+          ) : (
+            <BulkBagPanel
+              bag={bag}
+              rowClubs={rowClubs}
+              onApply={(clubs, equipment) => {
+                if (onSetEntriesBulk) {
+                  onSetEntriesBulk(clubs, equipment);
+                } else {
+                  // Fallback if caller didn't supply bulk handler
+                  clubs.forEach((c) => onSetEntry(c, equipment));
+                }
+                setBulkOpen(false);
+              }}
+              onClose={() => setBulkOpen(false)}
+            />
+          )}
+        </div>
+      )}
+
       {/* Add club to bag */}
       <div style={{ marginTop: 8 }}>
         {!addingClub ? (
@@ -205,6 +242,179 @@ export default function BagPanel({
           </button>
         </div>
       )}
+
+      {/* Overwrite equipment from bag — more aggressive than Fill Missing.
+          Rewrites every shot's equipment from the current bag, overwriting
+          existing stamped values. Used when the bag has been corrected after
+          shots were imported with a wrong equipment value (e.g. seeded
+          incorrectly during the v1.8 migration). Destructive — wipes the
+          snapshot semantic for the affected shots, so a clear confirmation. */}
+      {overwriteCount > 0 && (
+        <div style={{
+          marginTop: 12,
+          padding: 10,
+          background: 'rgba(251,191,36,0.08)',
+          border: '1px solid rgba(251,191,36,0.4)',
+          borderRadius: 4,
+          fontSize: 12,
+          color: 'var(--text)',
+          lineHeight: 1.5,
+        }}>
+          <div style={{ marginBottom: 8 }}>
+            <strong style={{ color: 'var(--amber)' }}>{overwriteCount}</strong>{' '}
+            shot{overwriteCount === 1 ? '' : 's'} are tagged with equipment
+            that doesn't match the current bag. Useful when you've corrected
+            a bag entry and want existing shots to follow.
+          </div>
+          <button
+            className="btn-secondary"
+            style={{ width: '100%', padding: '6px 10px', fontSize: 11 }}
+            onClick={() => {
+              if (confirm(
+                'Overwrite equipment on ' + overwriteCount + ' shot' + (overwriteCount === 1 ? '' : 's') +
+                '?\n\nThis will replace their current equipment tags with whatever your bag says for their club. ' +
+                'Use this when the bag is now correct and you want existing shots to match.'
+              )) {
+                onOverwriteFromBag();
+              }
+            }}
+            title="Replace existing equipment values with what the bag says now"
+          >
+            Overwrite equipment from bag
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bulk-tag panel. Pick equipment first; the available clubs to apply it
+ * to are auto-filtered to that equipment's category (you can't apply an
+ * iron model to a wedge slot). User then checks which clubs to apply to
+ * (defaulting to no checks — explicit selection).
+ *
+ * Renders inline inside BagPanel; closes on apply / cancel.
+ */
+function BulkBagPanel({ bag, rowClubs, onApply, onClose }) {
+  const [equipment, setEquipment] = useState(null);
+  const [category, setCategory] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+
+  // Eligible clubs: those in the current bag rows that match the chosen
+  // equipment's category. Until equipment is picked, no clubs render.
+  const eligibleClubs = category
+    ? rowClubs.filter((c) => clubCategory(c) === category)
+    : [];
+
+  return (
+    <div style={{
+      padding: 10,
+      background: 'var(--bg-elev-3)',
+      border: '1px solid var(--border-strong)',
+      borderRadius: 4,
+    }}>
+      <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+        Bulk tag — set one equipment across many clubs
+      </div>
+
+      {/* Step 1: category */}
+      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>
+        1. Pick equipment category:
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+        {['driver', 'wood', 'hybrid', 'iron', 'wedge'].map((cat) => (
+          <button
+            key={cat}
+            className={`chip ${category === cat ? 'active' : ''}`}
+            onClick={() => { setCategory(cat); setEquipment(null); setSelected(new Set()); }}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Step 2: equipment picker — same category-aware flow as elsewhere */}
+      {category && (
+        <>
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>
+            2. Pick equipment:
+          </div>
+          <BagInlinePicker
+            category={category}
+            brands={getBrandsForCategory(category)}
+            current={equipment}
+            onPick={(eq) => setEquipment(eq)}
+            onClose={() => { /* keep open inside bulk mode */ }}
+          />
+        </>
+      )}
+
+      {/* Step 3: apply-to clubs (checkboxes) */}
+      {equipment && eligibleClubs.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 10, marginBottom: 4 }}>
+            3. Apply <span style={{ color: 'var(--text)', fontWeight: 600 }}>{equipment}</span> to:
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {eligibleClubs.map((c) => (
+              <label key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(c)}
+                  onChange={(e) => {
+                    const next = new Set(selected);
+                    if (e.target.checked) next.add(c); else next.delete(c);
+                    setSelected(next);
+                  }}
+                />
+                <span style={{ fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 600 }}>{c}</span>
+                {bag[c] && (
+                  <span style={{ fontSize: 9, color: 'var(--text-faint)' }}>
+                    (was {bag[c]})
+                  </span>
+                )}
+              </label>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            <button
+              className="btn-secondary"
+              style={{ padding: '3px 10px', fontSize: 10 }}
+              onClick={() => setSelected(new Set(eligibleClubs))}
+            >
+              SELECT ALL
+            </button>
+            <button
+              className="btn-secondary"
+              style={{ padding: '3px 10px', fontSize: 10 }}
+              onClick={() => setSelected(new Set())}
+            >
+              CLEAR
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Footer */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+        <button
+          className="btn-primary"
+          disabled={!equipment || selected.size === 0}
+          onClick={() => onApply([...selected], equipment)}
+          style={{ padding: '5px 12px', fontSize: 10 }}
+          title={!equipment ? 'Pick equipment first' : selected.size === 0 ? 'Select at least one club' : 'Apply equipment to selected clubs'}
+        >
+          APPLY TO {selected.size} CLUB{selected.size === 1 ? '' : 'S'}
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={onClose}
+          style={{ padding: '5px 12px', fontSize: 10 }}
+        >
+          CANCEL
+        </button>
+      </div>
     </div>
   );
 }

@@ -55,6 +55,11 @@ export const TREND_METRICS = [
  * sorted by date ascending (oldest first — chronological reads left to
  * right on the trend chart).
  *
+ * `date` is an epoch millisecond number, not the raw ISO string from the
+ * shot record — Date.parse() converts so all downstream arithmetic
+ * (regression, axis mapping) works numerically. Without that conversion,
+ * `string - number` cascades to NaN through the entire chart.
+ *
  * Sessions where we can't determine a date fall to the end (and get a
  * synthetic timestamp), but should be rare — the parser stamps every shot
  * with createdAt.
@@ -63,19 +68,22 @@ export function groupBySession(shots) {
   const map = new Map();
   for (const s of shots || []) {
     const id = s.sessionId || '__nosession__';
+    // createdAt is an ISO string from the parser. Convert to epoch ms now
+    // so all subsequent date math is numeric.
+    const ts = s.createdAt ? Date.parse(s.createdAt) : 0;
     if (!map.has(id)) {
       map.set(id, {
         sessionId: id,
         // Use the earliest shot's createdAt as the session date — sessions
         // are short enough that the first shot's time is a fine proxy.
-        date: s.createdAt || 0,
+        date: Number.isFinite(ts) ? ts : 0,
         shots: [],
       });
     }
     const sess = map.get(id);
     sess.shots.push(s);
     // Update earliest date as we see shots
-    if (s.createdAt && s.createdAt < sess.date) sess.date = s.createdAt;
+    if (Number.isFinite(ts) && ts && ts < sess.date) sess.date = ts;
   }
   const result = [...map.values()];
   result.sort((a, b) => (a.date || 0) - (b.date || 0));
@@ -159,6 +167,11 @@ export function linearRegression(points) {
  * "what's my typical 7i club speed across every shot I've ever hit?" —
  * which is a population statistic. The trend chart uses session medians
  * for a different reason (smoothing the within-session noise).
+ *
+ * Returns: { mean, stdev, median, n, min, max, values }.
+ * `values` is included so the fingerprint card can build a density heatmap
+ * over the actual distribution; for typical sample sizes (10s–100s of
+ * shots) the array stays small enough to pass around without concern.
  */
 export function metricBaseline(shots, club, metricKey) {
   const clubShots = (shots || []).filter((s) => s.club === club);
@@ -171,7 +184,40 @@ export function metricBaseline(shots, club, metricKey) {
     stdev: stdev(vals),
     median: median(vals),
     n: vals.length,
+    min: Math.min(...vals),
+    max: Math.max(...vals),
+    values: vals,
   };
+}
+
+/**
+ * Build a histogram of values across a fixed number of equal-width bins
+ * spanning [min, max]. Returns an array of bin counts, length = nBins.
+ * Used by the fingerprint card's density heatmap.
+ *
+ * Bin count is adaptive based on sample size: small samples get fewer
+ * bins so each one has meaningful count; large samples get more bins
+ * for finer shape. Caller can override via `forceBins`.
+ *
+ * Returns null if there's not enough data to be meaningful (< 8 values),
+ * or if min equals max (single value — nothing to bin).
+ */
+export function valueHistogram(values, opts = {}) {
+  if (!values || values.length < 8) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) return null;
+  // Adaptive bin count: roughly sqrt(n), capped between 6 and 18
+  const nBins = opts.forceBins ?? Math.max(6, Math.min(18, Math.round(Math.sqrt(values.length) * 1.5)));
+  const range = max - min;
+  const bins = new Array(nBins).fill(0);
+  for (const v of values) {
+    let i = Math.floor(((v - min) / range) * nBins);
+    if (i >= nBins) i = nBins - 1;
+    if (i < 0) i = 0;
+    bins[i]++;
+  }
+  return { bins, nBins, min, max };
 }
 
 /**

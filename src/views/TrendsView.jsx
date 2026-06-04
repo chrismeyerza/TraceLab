@@ -8,6 +8,7 @@ import {
   pinnedSessionValue,
   mostHitClub,
   formatMetricValue,
+  valueHistogram,
 } from '../lib/trends';
 import { clubColor } from '../lib/clubs';
 
@@ -39,29 +40,43 @@ import { clubColor } from '../lib/clubs';
  *   - No pinned session → "Today vs baseline" section says "Pin a
  *     session to compare it to your baseline"
  */
-export default function TrendsView({ shots, allClubs, units, pinnedSession }) {
+export default function TrendsView({ shots, allShots, allClubs, units, pinnedSession }) {
+  // `shots` is the user-filtered set (respects the current filter bar).
+  // `allShots` is the user's full shot history regardless of filter — used
+  // for the all-time baseline and the drift chart, because those questions
+  // ("what's my all-time mean?" and "how have I trended across all sessions?")
+  // wouldn't make sense narrowed to a single pinned session. The Today vs
+  // Baseline section uses the pinned session for "today" and allShots for
+  // the baseline; the drift section uses allShots entirely.
+
   // Club selection. Defaults to the most-hit club so the view is useful
   // on first land. Stored locally — switching club shouldn't affect any
   // other view's state.
   const [club, setClub] = useState(null);
   useEffect(() => {
     if (!club && allClubs.length) {
-      const def = mostHitClub(shots, allClubs);
+      const def = mostHitClub(allShots || shots, allClubs);
       if (def) setClub(def);
     }
     // If the current club no longer exists in allClubs (e.g. filters
     // changed and now-excluded), revert to the most-hit available.
     else if (club && !allClubs.includes(club)) {
-      const def = mostHitClub(shots, allClubs);
+      const def = mostHitClub(allShots || shots, allClubs);
       if (def) setClub(def);
     }
-  }, [allClubs, shots, club]);
+  }, [allClubs, allShots, shots, club]);
+
+  // The trend math operates on the FULL shot history, never filtered.
+  // Otherwise pinning a session would collapse the drift chart to one
+  // session, and baselines would be one-session medians — neither useful.
+  // Defensive fallback to `shots` if allShots isn't passed (older caller).
+  const sourceShots = allShots && allShots.length ? allShots : shots;
 
   // Session-by-session series for each metric — computed once per
-  // (shots, club) change rather than per-metric to share the grouping work.
-  const sessionGroups = useMemo(() => groupBySession(shots), [shots]);
+  // (sourceShots, club) change rather than per-metric to share the grouping work.
+  const sessionGroups = useMemo(() => groupBySession(sourceShots), [sourceShots]);
 
-  if (!shots.length) {
+  if (!sourceShots.length) {
     return (
       <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-dim)' }}>
         <p>Import some shots to see trends and per-club fingerprints.</p>
@@ -79,10 +94,12 @@ export default function TrendsView({ shots, allClubs, units, pinnedSession }) {
 
   // Pre-compute per-metric: baseline, pinned-session value, series, regression.
   // Doing it once here makes the render code below straightforward.
+  // Baselines: full history (sourceShots). Pinned: only that session's data.
+  // Series: full history grouped by session.
   const metricsData = TREND_METRICS.map((m) => {
-    const baseline = metricBaseline(shots, club, m.key);
+    const baseline = metricBaseline(sourceShots, club, m.key);
     const pinned = pinnedSession
-      ? pinnedSessionValue(shots, club, m.key, pinnedSession.id)
+      ? pinnedSessionValue(sourceShots, club, m.key, pinnedSession.id)
       : null;
     const series = sessionSeries(sessionGroups, club, m.key);
     const reg = linearRegression(series);
@@ -225,21 +242,34 @@ function FingerprintCard({ metric, baseline, pinned }) {
     ? (todayVal - baseline.mean) / baseline.stdev
     : null;
 
-  // Range bar geometry: µ ± 2σ. The marker for today is placed
-  // proportionally. Values outside that range get clamped to the edge so
-  // the dot is always visible, but coloured red as a hint that it's beyond
-  // the normal range.
-  let pct = null; // 0..1 position on the bar
+  // Range bar geometry: actual min..max of the player's shots, NOT µ±2σ.
+  // ±2σ bounds were confusing in practice — users read the boundary labels
+  // as "shots I've actually hit" when they were just statistical limits.
+  // Using true min/max means the boundary labels are real shots from the
+  // history. The σ context is still visible in the delta annotation.
+  const min = baseline.min;
+  const max = baseline.max;
+  const range = max - min;
+  let pct = null;
+  let meanPct = null;
   let outOfRange = false;
-  if (todayVal != null && baseline.stdev > 0) {
-    const min = baseline.mean - 2 * baseline.stdev;
-    const max = baseline.mean + 2 * baseline.stdev;
-    pct = (todayVal - min) / (max - min);
-    if (pct < 0 || pct > 1) outOfRange = true;
-    pct = Math.max(0, Math.min(1, pct));
+  if (range > 0) {
+    if (todayVal != null) {
+      pct = (todayVal - min) / range;
+      if (pct < 0 || pct > 1) outOfRange = true;
+      pct = Math.max(0, Math.min(1, pct));
+    }
+    meanPct = (baseline.mean - min) / range;
+    meanPct = Math.max(0, Math.min(1, meanPct));
   } else if (todayVal != null) {
     pct = 0.5;
+    meanPct = 0.5;
   }
+
+  // Density heatmap. Built from the actual value distribution; null when
+  // sample size is too small to be meaningful (<8 shots). Each bin's alpha
+  // is proportional to bin_count / max_bin_count.
+  const hist = valueHistogram(baseline.values);
 
   // Delta sign for the colour: green if magnitude is small (within 1σ),
   // amber if 1-2σ, red beyond. Direction (up/down) is shown by the arrow,
@@ -289,11 +319,42 @@ function FingerprintCard({ metric, baseline, pinned }) {
           (n={baseline.n})
         </span>
       </div>
-      {/* Range bar: -2σ ... mean ... +2σ */}
+      {/* Range bar: actual min..max with density heatmap behind. The heatmap
+          bins reflect how often values fall in each region — darker = more
+          shots there. The mean tick and today dot overlay the heatmap. */}
       <div className="trend-range-bar">
         <div className="trend-range-track">
-          {/* Centre tick at mean */}
-          <div className="trend-range-mean" />
+          {/* Heatmap bins — only drawn when we have enough data for the
+              histogram to be honest (>=8 values per valueHistogram). */}
+          {hist && (
+            <div className="trend-range-heatmap">
+              {(() => {
+                const maxCount = Math.max(...hist.bins);
+                if (maxCount === 0) return null;
+                return hist.bins.map((count, i) => {
+                  const alpha = count / maxCount;
+                  return (
+                    <div
+                      key={i}
+                      className="trend-range-bin"
+                      style={{
+                        left: `${(i / hist.nBins) * 100}%`,
+                        width: `${(1 / hist.nBins) * 100}%`,
+                        opacity: 0.15 + alpha * 0.55,
+                      }}
+                    />
+                  );
+                });
+              })()}
+            </div>
+          )}
+          {/* Mean tick — at the actual mean's position, not centre */}
+          {meanPct != null && (
+            <div
+              className="trend-range-mean"
+              style={{ left: `${meanPct * 100}%` }}
+            />
+          )}
           {/* Today's marker */}
           {pct != null && (
             <div
@@ -303,8 +364,8 @@ function FingerprintCard({ metric, baseline, pinned }) {
           )}
         </div>
         <div className="trend-range-labels">
-          <span>{formatMetricValue(baseline.mean - 2 * baseline.stdev, metric)}</span>
-          <span>{formatMetricValue(baseline.mean + 2 * baseline.stdev, metric)}</span>
+          <span>{formatMetricValue(min, metric)}</span>
+          <span>{formatMetricValue(max, metric)}</span>
         </div>
       </div>
     </div>
