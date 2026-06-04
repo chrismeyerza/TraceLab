@@ -213,6 +213,115 @@
   .scope-summary-chip.tone-equip { color: var(--blue); border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.08); }
   .scope-summary-chip.tone-tags { color: var(--purple); border-color: rgba(192,132,252,0.4); background: rgba(192,132,252,0.08); }
 
+  /* TRENDS VIEW ------------------------------------------------------- */
+  /* Per-club fingerprint + drift charts. Two grids of compact cards: the
+     fingerprint cards (today vs baseline) and the drift cards (mini line
+     charts over session medians). Layout is responsive: 2 columns wide
+     by default, single column on narrow screens. */
+  .trends-club-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 8px 10px;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .trends-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    padding: 10px;
+  }
+  .trend-card {
+    padding: 10px 12px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .trend-card-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .trend-card-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .trend-card-today-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-strong);
+    line-height: 1.1;
+  }
+  .trend-card-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .trend-card-delta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    margin-left: auto;
+  }
+  .trend-card-baseline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .trend-range-bar {
+    margin-top: 4px;
+  }
+  .trend-range-track {
+    position: relative;
+    height: 8px;
+    background: var(--bg-elev-3);
+    border-radius: 4px;
+    overflow: visible;
+  }
+  .trend-range-mean {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--text-faint);
+    transform: translateX(-0.5px);
+  }
+  .trend-range-today {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    border: 1.5px solid var(--bg-elev-2);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 0.5px var(--green);
+  }
+  .trend-range-today.out-of-range {
+    background: var(--red);
+    box-shadow: 0 0 0 0.5px var(--red);
+  }
+  .trend-range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
   /* BAG PANEL --------------------------------------------------------- */
   /* Per-user equipment-by-club editor that lives inside the Settings
      panel. Each row is a club + equipment value; the equipment cell is

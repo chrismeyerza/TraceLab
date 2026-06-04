@@ -1,161 +1,121 @@
-# Changes — Equipment-as-bag-property (PR 4.18)
+# Changes — Trends view (PR 4.19)
 
-The big conceptual change we discussed. Equipment is no longer a per-shot
-field you edit. It's a property of which club hit the shot, configured
-once per user in Settings as your "bag." Version bumped to **1.8.0**.
+New top-level view answering the questions you flagged: "is today's
+session normal for me?" and "am I drifting over time?" Version bumped
+to **1.9.0**.
 
-## The new model
+## What it does
 
-**Your bag** lives in Settings → Bag. It maps each club to its equipment:
+A new **Trends** tab in the top navigation. Pick a club; see two
+sections:
 
-```
-Dr   → Callaway Rogue ST
-3w   → Callaway Paradym
-7i   → Ping i230
-54°  → Vokey SM11
-```
+### 01 — Today vs your baseline
 
-**On import**, each new shot gets its equipment stamped from your current
-bag at that moment. If the club isn't in your bag, equipment stays null.
-
-**On club reassignment**, equipment auto-follows. Reassigning a shot from
-7i → 8i updates its equipment to your 8i bag entry (or null if 8i isn't
-in the bag).
-
-**Equipment is a snapshot.** Changing your bag tomorrow does NOT
-retroactively update old shots. Old shots keep whatever equipment was
-stamped at the time. This is what lets you compare old gear vs new gear
-via the equipment filter — both values exist in your data as historical
-truth.
-
-## What's gone
-
-The per-shot equipment editing in the Shots view is removed:
-
-- **No more inline EQUIP picker** — the column is read-only now
-- **No more "Set equipment" bulk action** — removed from the action bar
-
-The EQUIP column still shows you what each shot was stamped with — useful
-for verification, and the equipment filter still works as before.
-
-## Migration on first 1.8.0 boot
-
-Your existing equipment tags don't get lost. When you load the app for
-the first time on 1.8.0:
-
-1. For each user, your bag is **seeded from your existing shot data** —
-   for each club, whichever equipment value appears most often becomes
-   the bag entry. So if 9 out of 10 of your 7i shots are tagged "Ping
-   i230", your bag's 7i → Ping i230.
-2. **Existing shots keep their stamped values** — nothing changes in
-   the database. The bag is a new layer on top.
-3. **No prompts, no popups** — it just works.
-
-The seeding is idempotent (won't overwrite a bag entry you set yourself
-afterwards) and only runs once per user via a localStorage flag.
-
-## Where to find it
-
-**Settings → Bag.** The gear icon in the top bar → scroll to the new
-"Bag" section. Lists your clubs (only ones you have shots for) with
-their equipment. Click any equipment value to change it; the picker is
-category-aware (a wedge row only shows wedge brands, etc).
-
-**Add club to bag** — for clubs you haven't hit yet but want to
-pre-populate. Useful before importing data for a club for the first
-time, so the import gets the equipment stamp right.
-
-## Edge cases handled
-
-### "I imported a club that wasn't in my bag"
-
-Those shots have equipment = null (since the bag had nothing to say).
-Bag panel shows them as "missing equipment":
+Shows when a session is pinned (Sessions view → pin a session). For
+each of nine metrics, a card:
 
 ```
-Settings → Bag
-
-⚠ 12 shots have no equipment tagged but their club is now in your bag.
-
-[ Fill missing equipment from bag ]
+CLUB SPEED            78.4 mph    ↑ 2.1 (1.0σ)
+all-time 76.3 ± 2.1 (n=42)
+[───────────●───────────●─────────]
+                       today    mean
 ```
 
-After you add the new club to your bag, one click backfills the missing
-equipment on the shots. Only NULL equipment fields are filled — shots
-already tagged stay as-is (snapshot integrity preserved).
+Reads at a glance: today's value, units, delta with direction arrow,
+how many σ above/below the all-time mean (coloured neutral/amber/red
+by magnitude), the baseline mean and σ, and a range bar showing where
+today sits on the µ ± 2σ distribution.
 
-### "I want to compare new irons to old irons"
+If a metric has no shots for this club in the pinned session: shows
+"no shots" rather than a misleading zero.
 
-Buy new irons → update your bag (`7i → Ping i230` instead of `Ping i530`).
-Import future sessions. Old shots stay tagged `Ping i530`, new shots
-get tagged `Ping i230`. Both values appear as chips in the EQUIPMENT
-filter row — click either to compare.
+### 02 — Drift over time
 
-### "I want to track a demo session"
+Always visible when ≥3 sessions exist for the chosen club. A 2-column
+grid of mini line charts, one per metric. Each chart:
 
-Use **free-form tags**, not equipment. Tag the shots `demo: ping G740`
-or whatever. Your bag stays correct; the demo shots are searchable via
-the TAGS filter row. Don't put demos in your bag.
+- Dots: session medians, oldest → newest
+- Connecting line (faint): traces the series
+- Dashed grey line: linear regression (the trend direction)
+- Footer: `78.0 → 82.5  +4.5 over 30d`
 
-### "I reassigned a club to one not in my bag"
+Dots from sessions with <3 shots for that metric are drawn faded, so
+you can see at a glance which points are thin samples.
 
-The shot's equipment is set to null (the bag is authoritative). To
-re-stamp it: add the new club to your bag, then run "Fill missing
-equipment from bag."
+## Metrics covered (all nine)
 
-## Files modified
+Club speed, ball speed, smash factor, carry, attack angle, club path,
+face to path, spin rate, peak height.
+
+All nine show together for the same club — the whole point is to see
+the pattern across metrics (e.g. club speed down AND attack angle up
+AND spin up suggests a tempo or release issue).
+
+## Design choices worth noting
+
+**Session medians for the time series.** Each dot is the median of that
+metric across the session's shots for that club. Outlier-resistant; one
+fat-toe shot doesn't move the dot dramatically.
+
+**Mean ± σ for the baseline.** All-time mean and standard deviation
+across every shot of that club. The range bar is µ ± 2σ — about 95% of
+your shots should fall inside if your data is roughly Gaussian.
+
+**Default filter: Full only.** Inherits from the existing TYPES filter.
+A trend chart that mixes pitches and full swings would be meaningless.
+
+**Most-hit club as default.** Opens to whichever club has the most
+shots in the current filter scope — the one most likely to have enough
+data to be useful.
+
+**No metric picker (deliberate).** You asked about a 3-at-a-time selector
+earlier; I pushed back and we agreed to show all nine. The whole insight
+is in the cross-metric pattern, and one club at a time keeps density
+manageable.
+
+## Empty states
+
+Three guards:
+
+1. No shots at all → "Import some shots to see trends..."
+2. <3 sessions for the chosen club → Section 02 hidden with a note
+3. No pinned session → Section 01 shows guidance instead of cards
+
+## Files
 
 | File | What changed |
 |---|---|
-| `src/lib/bag.js` | **NEW** — getBag, setBag, setBagEntry, getBagEntry, deleteBag, seedBagFromShots, stampEquipmentFromBag |
-| `src/components/BagPanel.jsx` | **NEW** — per-user bag editor: club rows, category-aware inline picker, add-club affordance, fill-missing escape hatch |
-| `src/components/SettingsPanel.jsx` | Renders BagPanel for the active user; accepts new bag-related props |
-| `src/views/ShotsView.jsx` | Inline EQUIP picker removed; bulk "Set equipment" action and panel removed; editingEquip and bulkEquipOpen state removed; equipment cell falls through to default read-only rendering |
-| `src/App.jsx` | Bag state + derivations (activeBag, activeUserClubs, standardClubLabels, missingEquipmentCount); stamping in commitImport; club-reassign auto-fill via augmentPatchWithBagEquipment; bag seeding migration on boot (per-user, idempotent); handleSetBagEntry, handleFillMissingEquipment handlers; deleteBag called when a user is deleted |
-| `src/index.css` | Bag panel styles |
-| `package.json` | 1.7.2 → 1.8.0 (minor bump — new conceptual feature) |
+| `src/lib/trends.js` | **NEW** — TREND_METRICS list, groupBySession, sessionSeries, linearRegression, metricBaseline, pinnedSessionValue, mostHitClub, formatMetricValue |
+| `src/views/TrendsView.jsx` | **NEW** — view component with FingerprintCard and DriftChart sub-components |
+| `src/components/TopBar.jsx` | Added 'Trends' tab |
+| `src/App.jsx` | View routing for 'trends'; imports TrendsView |
+| `src/index.css` | Trend card and grid styles |
+| `package.json` | 1.8.0 → 1.9.0 (minor — new view) |
 
 ## Verified
 
 - Production build clean
-- Bag library smoke-tested:
-  - Empty bag, get/set/clear entries
-  - Majority-wins seeding from shots (tie-broken alphabetically)
-  - Existing bag entries preserved during seed
-  - Stamping fills empty equipment when bag has entry, leaves alone when not
-
-## What this does NOT change
-
-- **Equipment filter** still works exactly as before — narrows shots by
-  equipment value
-- **Existing shots** are not touched; your historical data is intact
-- **Tags** unchanged — they remain the right tool for demos, conditions,
-  ad-hoc context
-- **All analysis views** (Strike, Distance, Flight, Shape, Overview)
-  unchanged — they use the equipment field same as before
+- Trend math smoke-tested: groupBySession correctly orders chronologically;
+  sessionSeries computes per-session medians and filters null/NaN; linear
+  regression on synthetic increasing data produces a positive slope as
+  expected
+- Dev server starts; index.html loads
 
 ## Apply
 
-Branch: `feature/pr4-18-bag-as-property`. Layers on top of PR 4.17.2.
+Branch: `feature/pr4-19-trends-view`. Layers on top of PR 4.18.
 
-## What to test
+## What to look at first
 
-1. Apply, restart, navigate to Settings → see your bag has been
-   auto-seeded from your existing data. Each club should show its
-   most-common equipment value.
-2. Try editing a bag entry — change 7i → something different. Save.
-   Go back to Shots view. Your existing 7i shots should still show the
-   OLD value (snapshot preserved).
-3. Import a new session for that club (if you have one to test with).
-   The new shots should get tagged with the NEW bag value.
-4. Try reassigning a shot's club from 7i → 8i. Equipment should auto-
-   update to your 8i bag entry.
-5. Try the Shots view EQUIP column — should be display-only (no click
-   handler).
-6. Check the bulk actions bar — "Set equipment" button should be gone.
+1. Apply, restart, open the new **Trends** tab
+2. Verify the club picker defaults to your most-hit club
+3. Pin a session (Sessions view → pin) and come back — should see the
+   nine fingerprint cards comparing to baseline
+4. Scroll to Section 02 — should see nine drift charts if you have ≥3
+   sessions for that club
+5. Switch clubs in the picker — view should reflow per club
 
-## What's next
+## Coming next
 
-- **PR 4.19 — Trends view** (the per-club fingerprint + drift-over-time
-  view we discussed). Parked in backlog with full design.
-- Column reordering in Shots view (still on backlog).
+- Column reordering in Shots view (still on backlog)
+- Anything you flag after testing 4.18 + 4.19

@@ -32,6 +32,7 @@ import StrikeView from './views/StrikeView';
 import FlightView from './views/FlightView';
 import DistanceView from './views/DistanceView';
 import ShapeView from './views/ShapeView';
+import TrendsView from './views/TrendsView';
 import ShotsView from './views/ShotsView';
 import SessionsView from './views/SessionsView';
 
@@ -932,6 +933,14 @@ export default function App() {
             {view === 'flight' && <FlightView shots={filteredShots} units={units} />}
             {view === 'distance' && <DistanceView shots={filteredShots} units={units} />}
             {view === 'shape' && <ShapeView shots={filteredShots} rightHanded={rightHanded} />}
+            {view === 'trends' && (
+              <TrendsView
+                shots={filteredShots}
+                allClubs={allClubs}
+                units={units}
+                pinnedSession={pinnedSession}
+              />
+            )}
             {view === 'shots' && (
               <ShotsView
                 shots={filteredShots}
