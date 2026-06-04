@@ -4,6 +4,7 @@ import {
   groupBySession,
   sessionSeries,
   linearRegression,
+  movingAverage,
   metricBaseline,
   pinnedSessionValue,
   mostHitClub,
@@ -92,8 +93,9 @@ export default function TrendsView({ shots, allShots, allClubs, units, pinnedSes
     );
   }
 
-  // Pre-compute per-metric: baseline, pinned-session value, series, regression.
-  // Doing it once here makes the render code below straightforward.
+  // Pre-compute per-metric: baseline, pinned-session value, series,
+  // moving average (the trend line). Doing it once here makes the render
+  // code below straightforward.
   // Baselines: full history (sourceShots). Pinned: only that session's data.
   // Series: full history grouped by session.
   const metricsData = TREND_METRICS.map((m) => {
@@ -102,9 +104,24 @@ export default function TrendsView({ shots, allShots, allClubs, units, pinnedSes
       ? pinnedSessionValue(sourceShots, club, m.key, pinnedSession.id)
       : null;
     const series = sessionSeries(sessionGroups, club, m.key);
-    const reg = linearRegression(series);
-    return { metric: m, baseline, pinned, series, reg };
+    const trend = movingAverage(series);
+    return { metric: m, baseline, pinned, series, trend };
   });
+
+  // Global x-axis range — the union of all session dates that have ANY
+  // metric value for this club. All drift charts use this same range so
+  // session N's dot is at the same horizontal pixel position across every
+  // chart in the grid. That's what makes "scan vertically to correlate
+  // metrics in a session" actually work.
+  const globalDates = (() => {
+    const set = new Set();
+    for (const d of metricsData) {
+      for (const p of d.series) set.add(p.date);
+    }
+    return [...set].sort((a, b) => a - b);
+  })();
+  const globalXMin = globalDates.length ? globalDates[0] : null;
+  const globalXMax = globalDates.length ? globalDates[globalDates.length - 1] : null;
 
   const hasEnoughForTrend = metricsData.some((d) => d.series.length >= 3);
 
@@ -176,17 +193,19 @@ export default function TrendsView({ shots, allShots, allClubs, units, pinnedSes
             <span className="num">02</span>Drift over time
           </div>
           <div className="card-subtitle">
-            Session medians for {club}, oldest → newest. Trend line shows direction.
+            Session medians for {club}. Dots = each session, oldest left → newest right. Dashed line = moving average.
           </div>
         </div>
         {hasEnoughForTrend ? (
           <div className="trends-grid">
-            {metricsData.map(({ metric, series, reg }) => (
+            {metricsData.map(({ metric, series, trend }) => (
               <DriftChart
                 key={metric.key}
                 metric={metric}
                 series={series}
-                regression={reg}
+                trend={trend}
+                globalXMin={globalXMin}
+                globalXMax={globalXMax}
               />
             ))}
           </div>
@@ -373,20 +392,25 @@ function FingerprintCard({ metric, baseline, pinned }) {
 }
 
 /**
- * Mini drift chart: SVG line chart of session medians over time, with a
- * linear regression line through them. Y-axis auto-scales to the data
- * range with a small padding so points don't hug the edges; X-axis is
- * date, oldest → newest.
+ * Mini drift chart: SVG line chart of session medians over time. The dashed
+ * line is a trailing moving average (3 or 5 sessions, adaptive to series
+ * length) — better than linear regression at capturing real shape like
+ * "improved then plateaued" instead of smoothing everything into a slope.
+ *
+ * X-axis uses a GLOBAL range (passed in via globalXMin/globalXMax) shared
+ * across all metric charts in the grid, so session N's dot sits at the same
+ * horizontal position no matter which metric you're looking at. This lets
+ * the user scan vertically across the grid to correlate metrics: "session 4
+ * — club speed jumped, ball speed jumped, carry jumped" reads visually
+ * because the dots align.
+ *
+ * Date labels at the bottom corners give a concrete sense of time span.
+ * Y-axis min/max labels at the top-left and bottom-left give magnitude.
  *
  * Sessions with low shot counts (n<3) are drawn faded to signal the data
- * point may not be representative. The regression line is drawn whether
- * or not it has good fit — direction is the signal we care about.
- *
- * Below the chart: latest value, delta from earliest, and the regression's
- * predicted drift over the chart's full timespan ("drift +2.1 over 47
- * days"). Gives the user numerical context for what the line shows.
+ * point may not be representative.
  */
-function DriftChart({ metric, series, regression }) {
+function DriftChart({ metric, series, trend, globalXMin, globalXMax }) {
   // Need at least 2 points for the chart to make sense. Less than 3 we
   // hide entirely — addressed by the parent's "needs ≥3 sessions" gate,
   // but defensive here too.
@@ -401,21 +425,27 @@ function DriftChart({ metric, series, regression }) {
     );
   }
 
-  // SVG geometry. Drawn into a viewBox; CSS sizes it responsively.
+  // SVG geometry. Slightly taller to make room for axis labels at top
+  // (y range) and bottom (date span). Drawn into a viewBox; CSS sizes
+  // responsively.
   const W = 200;
-  const H = 90;
+  const H = 100;
   const padL = 4;
   const padR = 4;
-  const padT = 6;
-  const padB = 6;
+  const padT = 10; // room for y-max label
+  const padB = 14; // room for x-axis date labels
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  // X domain: session dates
-  const xs = series.map((p) => p.date);
-  const xMin = Math.min(...xs);
-  const xMax = Math.max(...xs);
-  const xRange = xMax - xMin || 1;
+  // X domain — uses the GLOBAL range (across all metrics) so all 9 charts
+  // align horizontally. Session N's dot is in the same x position no matter
+  // which metric you're looking at, so vertical scanning to correlate
+  // metrics actually works. Falls back to this series' own range if the
+  // global wasn't provided.
+  const gMin = globalXMin != null ? globalXMin : Math.min(...series.map((p) => p.date));
+  const gMax = globalXMax != null ? globalXMax : Math.max(...series.map((p) => p.date));
+  const xRange = (gMax - gMin) || 1;
+
   // Y domain with a small padding so points aren't on the edge
   const ys = series.map((p) => p.value);
   const yMin = Math.min(...ys);
@@ -424,43 +454,90 @@ function DriftChart({ metric, series, regression }) {
   const yLo = yMin - yPad;
   const yHi = yMax + yPad;
 
-  const xToPx = (x) => padL + ((x - xMin) / xRange) * plotW;
+  const xToPx = (x) => padL + ((x - gMin) / xRange) * plotW;
   const yToPx = (y) => padT + (1 - (y - yLo) / (yHi - yLo)) * plotH;
 
-  // Build the path (polyline) connecting session dots
+  // Build the path connecting session dots
   const linePath = series.map((p, i) =>
     `${i === 0 ? 'M' : 'L'} ${xToPx(p.date)} ${yToPx(p.value)}`
   ).join(' ');
 
-  // Regression line, evaluated at the two endpoints
-  let regLine = null;
-  if (regression) {
-    const y1 = regression.slope * xMin + regression.intercept;
-    const y2 = regression.slope * xMax + regression.intercept;
-    regLine = { x1: xToPx(xMin), y1: yToPx(y1), x2: xToPx(xMax), y2: yToPx(y2) };
+  // Moving-average path. Each segment connects consecutive points; if
+  // there's no trend (single point), nothing renders. Window is in the
+  // trend points so we can label the line with it.
+  let trendPath = null;
+  let trendWindow = null;
+  if (trend && trend.length >= 2) {
+    trendPath = trend.map((p, i) =>
+      `${i === 0 ? 'M' : 'L'} ${xToPx(p.date)} ${yToPx(p.value)}`
+    ).join(' ');
+    trendWindow = trend[trend.length - 1].window;
   }
 
-  // Footer numbers
+  // Footer numbers (use this series' own min/max dates for the day count
+  // — that's the actual time over which the change happened, not the
+  // global x-range which may include sessions where this metric was absent)
   const first = series[0];
   const last = series[series.length - 1];
   const delta = last.value - first.value;
-  const days = Math.round((xMax - xMin) / (24 * 60 * 60 * 1000));
+  const days = Math.round((last.date - first.date) / (24 * 60 * 60 * 1000));
+
+  // Date labels for the x-axis. Use the GLOBAL range so the labels match
+  // the actual span of dots across the grid.
+  const fmtDate = (ts) => new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const startLabel = fmtDate(gMin);
+  const endLabel = fmtDate(gMax);
 
   return (
     <div className="trend-card">
       <div className="trend-card-label">{metric.label}</div>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
-        {/* Regression first so dots overlay */}
-        {regLine && (
-          <line
-            x1={regLine.x1} y1={regLine.y1} x2={regLine.x2} y2={regLine.y2}
-            stroke="var(--text-dim)"
-            strokeWidth="0.8"
-            strokeDasharray="2 2"
-            opacity="0.65"
-          />
+        {/* Y-axis range labels — top (max) and bottom (min) of the data
+            range. Anchored at the top-left and bottom-left of the plot
+            area so the eye can quickly read "the chart spans 77 to 81". */}
+        <text x={padL} y={padT - 2}
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 6.5, fill: 'var(--text-faint)' }}>
+          {formatMetricValue(yMax, metric)}
+        </text>
+        <text x={padL} y={padT + plotH + 6}
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 6.5, fill: 'var(--text-faint)' }}>
+          {formatMetricValue(yMin, metric)}
+        </text>
+
+        {/* X-axis date labels at left and right edges of the plot */}
+        <text x={padL} y={H - 2}
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 6.5, fill: 'var(--text-faint)' }}>
+          {startLabel}
+        </text>
+        <text x={padL + plotW} y={H - 2} textAnchor="end"
+          style={{ fontFamily: 'JetBrains Mono', fontSize: 6.5, fill: 'var(--text-faint)' }}>
+          {endLabel}
+        </text>
+
+        {/* Moving-average line first so dots overlay it */}
+        {trendPath && (
+          <>
+            <path
+              d={trendPath}
+              fill="none"
+              stroke="var(--text-dim)"
+              strokeWidth="0.9"
+              strokeDasharray="2 2"
+              opacity="0.75"
+            />
+            {/* Tiny inline label so the user knows what the dashed line is */}
+            <text
+              x={padL + plotW - 1}
+              y={padT + 4}
+              textAnchor="end"
+              style={{ fontFamily: 'JetBrains Mono', fontSize: 6, fill: 'var(--text-faint)' }}
+            >
+              {trendWindow}-sess avg
+            </text>
+          </>
         )}
-        {/* Connecting line */}
+
+        {/* Connecting line through raw session medians */}
         <path
           d={linePath}
           fill="none"

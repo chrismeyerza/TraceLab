@@ -160,6 +160,46 @@ export function linearRegression(points) {
 }
 
 /**
+ * Trailing moving average. For each point at position i, takes the mean of
+ * the values at positions [i-window+1 .. i]. The first (window-1) points
+ * just average what they have (so position 0 = just the first value;
+ * position 1 = mean of first two; etc.). This means the curve starts at
+ * the first dot rather than a window-length gap.
+ *
+ * Window size is adaptive based on series length:
+ *   - <= 5 sessions: window = 2 (very light smoothing)
+ *   - <= 10 sessions: window = 3
+ *   - > 10 sessions: window = 5
+ *
+ * Returns [{ date, value }] in the same order as the input. The dates are
+ * unchanged (still ms epoch); only the values are smoothed. Returns null
+ * if fewer than 2 points (nothing to average).
+ *
+ * Used instead of linear regression as the trend line. Better at capturing
+ * "improved then plateaued" or "dipped and recovered" shapes that a single
+ * straight line would smooth into a moderate slope, missing the real story.
+ */
+export function movingAverage(points) {
+  if (!points || points.length < 2) return null;
+  let window;
+  if (points.length <= 5) window = 2;
+  else if (points.length <= 10) window = 3;
+  else window = 5;
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const start = Math.max(0, i - window + 1);
+    let sum = 0;
+    let n = 0;
+    for (let j = start; j <= i; j++) {
+      sum += points[j].value;
+      n++;
+    }
+    out.push({ date: points[i].date, value: sum / n, window });
+  }
+  return out;
+}
+
+/**
  * Baseline for one metric across a club's shots: mean ± σ over the entire
  * raw shot population (not session medians). Returns null for empty input.
  *

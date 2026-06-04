@@ -1,162 +1,86 @@
-# Changes — Trends fixes, bag bulk-tag, overwrite-from-bag, pin chip (PR 4.19.1)
+# Changes — Trends chart improvements (PR 4.19.2)
 
-Eight items, all responding to issues you flagged after using PRs 4.18
-and 4.19. Version bumped to **1.9.1**.
+Five fixes to the Trends drift charts, all responding to issues you
+flagged while testing. Version bumped to **1.9.2**.
 
-**IMPORTANT — this PR does NOT include `src/data/equipment.js`.** You
-edited that file yourself (Ping G400 added to iron and wedge sections).
-Your edit stays intact when applying this PR.
+## 1. Moving average replaces linear regression
 
-## 1. Trends drift charts now actually render (the NaN bug)
+The dashed line is now a **trailing moving average**, not a linear
+regression. Adaptive window:
 
-**Root cause:** `createdAt` on a shot is an ISO date string (e.g.
-`"2026-05-20T..."`) from the parser. The trends library was treating it
-as a number, doing arithmetic on it, which cascaded NaN through every
-SVG path coordinate. The console errors you saw — `<path> attribute d:
-Expected number, "M NaN 59.21..."` — were the visible symptom.
+- ≤ 5 sessions → window of 2
+- ≤ 10 sessions → window of 3
+- > 10 sessions → window of 5
 
-**Fix:** `groupBySession()` now parses createdAt to epoch milliseconds
-via `Date.parse()` before any arithmetic.
+Better at capturing real shape — "improved then plateaued" looks like
+that, instead of being averaged into a moderate slope.
 
-Drift charts should now render correctly for any club with 3+ sessions.
+## 2. Inline label tells you what the dashed line is
 
-## 2. Trends uses full shot history regardless of session pin
+Top-right of each chart, in tiny text: `3-sess avg` (or whatever window
+applies). So the dashed line is no longer mystery — you can see at a
+glance what it represents.
 
-**The bug:** Trends received `filteredShots`. When a session was pinned,
-`filteredShots` narrowed to just that session — so the drift chart had
-one data point and Section 02 fell into the "need ≥3 sessions" state.
+## 3. X-axis date labels
 
-**Fix:** Trends now receives BOTH `shots` (filtered) and `allShots`
-(unfiltered). The trend math (baselines, drift) uses `allShots`. Only
-the "today" pinned-session value uses the pin. This means you can pin
-a session and see exactly the comparison you wanted: today vs your
-all-time baseline, plus the drift chart showing all sessions with
-today as just one of the dots.
+Bottom-left and bottom-right corners show actual dates, e.g.
+`16 Oct` ... `03 Jun`. Direction (oldest → newest, left → right) is now
+explicit instead of implied.
 
-## 3. Range bar shows actual min/max, not ±2σ
+## 4. Y-axis range labels
 
-**The bug:** The bar labels were showing µ±2σ as numeric bounds, which
-you read as "did I really hit 113?" — and reasonably so. They looked
-like real shots.
+Top-left of the chart shows the max value, bottom-left shows the min.
+So "the chart spans 77 to 81" becomes immediately readable, which solves
+the "small change actually matters" issue — when you see the chart goes
+from 77.8 at the bottom to 81.1 at the top, +3.3 mph reads as
+genuinely meaningful, not as a small visual movement.
 
-**Fix:** The bar now spans your actual min to actual max for that
-metric on that club. Labels show real shots, not statistical bounds.
-The σ context is still visible in the delta annotation
-(`↓ -3.2 (1.5σ below)`).
+## 5. All 9 mini-charts aligned on the same x-axis
 
-## 4. Density heatmap behind the range bar
+This is the big one for cross-metric pattern reading. All 9 charts now
+share the SAME x-axis range — the union of all sessions where you have
+any data for the selected club. So session N's dot is at the same
+horizontal pixel position no matter which metric you're looking at.
 
-Adaptive histogram bins (between 6 and 18, sqrt-of-n based) draw a grey
-gradient behind the range bar. Darker = more shots in that band. Lets
-you see at a glance whether your distribution is tight or scattered.
-The mean tick and today's dot still overlay.
+Practical effect: scan vertically across the grid and you can see
+"session 4 was when everything jumped." Club speed up, ball speed up,
+carry up — the cross-metric story reads visually because the dots
+align by date column.
 
-Drawn only when there's enough data to be honest (≥8 values). Below
-that the bar is just a range with mean+today markers.
-
-## 5. Bag: bulk-tag multiple clubs at once
-
-New "Set equipment across multiple clubs" button in the Bag section.
-Three-step flow:
-
-1. Pick category (driver / wood / hybrid / iron / wedge)
-2. Pick equipment from the category's brand list
-3. Check off which clubs in your bag to apply it to
-4. Click APPLY → all selected clubs updated in one step
-
-Especially useful for iron sets: tag 5i through PW as Ping G400 with
-one apply. The picker is category-aware — picking iron equipment only
-offers iron clubs to apply to (you can't accidentally tag a wedge as
-a driver model).
-
-## 6. "Overwrite equipment from bag" action
-
-The escape hatch for correcting historical mis-stamps. When the bag is
-now right but existing shots are stamped with old/wrong equipment, this
-action rewrites them.
-
-Appears in the Bag section as an amber notice when ≥1 shot's equipment
-doesn't match the current bag. Requires confirmation (it's destructive
-— it wipes the snapshot semantic for affected shots).
-
-Distinct from "Fill missing equipment from bag":
-- **Fill missing**: only fills NULL equipment values. Safe.
-- **Overwrite**: replaces EXISTING values. Destructive, confirmed.
-
-Both only touch shots belonging to the active user, and only when the
-bag has an entry for the shot's club.
-
-## 7. Pin chip: separate × button, robust unpin
-
-**The bug:** The pinned-session chip in the filter bar didn't unpin
-when clicked. React's onClick had become a noop somehow — probably a
-hot-reload artefact that left a stale handler. Either way, the chip
-pattern (whole chip = button) was fragile.
-
-**Fix:** The chip is now a `<div>` containing the session label and a
-dedicated `<button>` with the × symbol. The × is visually distinct
-(round, dark background) and its own click target. The handler firing
-on a real `<button>` element should be much more reliable than the
-previous pattern.
-
-Tooltips made clearer: hover the chip to see "Session pinned: …",
-hover the × to see "Unpin this session".
-
-## 8. Sessions view: VIEW button renamed to PIN
-
-The button that pins a session was labelled "VIEW," which suggested
-"view details" not "pin to filter." Now labelled "PIN" with a clearer
-title: "Pin this session to the filter — analysis views narrow to its
-shots; Trends → Today vs baseline uses it."
+This is what makes the Trends view answer "did this matter?" without
+having to compute downstream effects: if club speed went up AND ball
+speed went up AND carry went up in the same session, the answer is
+visibly yes.
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/trends.js` | NaN root-cause fix (Date.parse); added `valueHistogram` helper; `metricBaseline` now returns min/max + raw values |
-| `src/views/TrendsView.jsx` | Accepts `allShots` and uses it for baselines/drift; range bar redesigned with min/max bounds + heatmap |
-| `src/components/BagPanel.jsx` | Bulk-tag panel; new `BulkBagPanel` sub-component; overwrite-from-bag action |
-| `src/components/SettingsPanel.jsx` | Passes new bag props through |
-| `src/components/FilterBar.jsx` | Pin chip rebuilt with explicit × button |
-| `src/views/SessionsView.jsx` | VIEW → PIN with clearer tooltip |
-| `src/App.jsx` | Passes `allShots` to Trends; new bag handlers (bulk, overwrite); overwriteCount memo |
-| `src/index.css` | Heatmap bin styles; mean tick now positions via `left` |
-| `package.json` | 1.9.0 → 1.9.1 |
-
-## NOT in this PR (intentional)
-
-`src/data/equipment.js` — you've made local edits to this file (Ping
-G400 in both iron and wedge sections). Leaving it alone preserves your
-changes.
-
-## Verified
-
-- Production build clean
-- Date-arithmetic fix smoke-tested with ISO strings: dates parse to
-  finite numbers, regression produces finite slope, pixel positions
-  are finite (no NaN)
+| `src/lib/trends.js` | New `movingAverage()` with adaptive window |
+| `src/views/TrendsView.jsx` | Computes global x-axis range across all metrics; DriftChart uses global range; renders date labels (bottom corners), y-range labels (top-left and bottom-left), and `N-sess avg` line label; moving-average path replaces regression line |
+| `package.json` | 1.9.1 → 1.9.2 |
 
 ## Apply
 
-Branch: `feature/pr4-19-1-trends-and-bag-fixes`. Layers on top of PR 4.19.
+Branch: `feature/pr4-19-2-trends-axis-labels-and-ma`. Layers on top of
+PR 4.19.1.
 
-## What to test (in order)
+## What to test
 
-1. Apply, restart. Trends → pick 7i → drift charts should render with
-   all 10 of your sessions as dots, regression line through them.
-2. Sessions → click PIN on a session → return to Trends → Section 01
-   "Today vs baseline" should now show today's values vs the all-time
-   baseline. Drift charts should still show all sessions, not just
-   the pinned one.
-3. Filter bar should now show the pin chip with a clear × button. Click
-   the × → session unpins.
-4. Settings → Bag → click "Set equipment across multiple clubs" → pick
-   "iron" → pick Ping G400 → check 5i, 6i, 7i, 8i, 9i, PW → APPLY.
-   All those bag entries should update in one step.
-5. After step 4, if the bag now disagrees with shots' stamped equipment,
-   you'll see an amber "X shots are tagged with equipment that doesn't
-   match the current bag" notice. Clicking "Overwrite equipment from
-   bag" → confirm → all those shots get re-stamped.
-6. Range bar in fingerprint cards — labels at the ends should now be
-   real shot values (your actual min/max), not ±2σ statistical bounds.
-   Grey heatmap should show where your shots cluster.
+1. Open Trends → pick 7i → look at the drift charts
+2. Date labels: bottom-left and bottom-right should show real dates
+3. Range labels: top-left = max value, bottom-left = min value
+4. Trend line: dashed grey line, with a small `3-sess avg` label at the
+   top-right
+5. Vertical scanning: pick a session position in the X axis (say, the
+   leftmost dot). Trace down through all 9 charts. The dot for that
+   session should be at the same horizontal position in every chart
+   that has data for it.
+6. Test with a couple of different clubs to make sure alignment works
+   when the selected club changes
+
+## Backlog still pending
+
+- Heatmap colour-coding clarity (darker = more shots — make it obvious)
+- Column reordering in Shots view
+- Anything else you flag from testing
