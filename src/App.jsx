@@ -333,6 +333,25 @@ export default function App() {
     });
   }, [shots, selectedClubs, timeFilter, pinnedSession, newestSessionIds, selectedTypes, selectedEquipment, selectedTags]);
 
+  // For the Trends view specifically: same filters EXCEPT the pinned-session
+  // narrowing. Pin is meaningful for Trends as the "today" reference point
+  // (Section 01 — Today vs baseline), but applying it as a filter would
+  // collapse the drift chart to a single session and make baselines trivial.
+  // So Trends gets a shot set that honours WHEN/types/equipment/tags/clubs
+  // (the user's explicit narrowing intent) but ignores pin.
+  const unpinnedFilteredShots = useMemo(() => {
+    return shots.filter((s) => {
+      if (selectedClubs.length && !selectedClubs.includes(s.club)) return false;
+      // Intentionally NO pin check here.
+      if (!inTimeWindow(s, newestSessionIds)) return false;
+      const type = s.shotType || 'full';
+      if (selectedTypes.length && !selectedTypes.includes(type)) return false;
+      if (selectedEquipment.length && !selectedEquipment.includes(s.equipment)) return false;
+      if (!shotHasAnyTag(s, selectedTags)) return false;
+      return true;
+    });
+  }, [shots, selectedClubs, timeFilter, newestSessionIds, selectedTypes, selectedEquipment, selectedTags]);
+
   // The Shots view used to bypass the shot-type filter via a separate
   // `shotsForEditing` memo, because reclassifying a shot's type made it
   // immediately vanish (the type filter wasn't visible at the time, so the
@@ -998,7 +1017,7 @@ export default function App() {
             {view === 'trends' && (
               <TrendsView
                 shots={filteredShots}
-                allShots={shots}
+                allShots={unpinnedFilteredShots}
                 allClubs={allClubs}
                 units={units}
                 pinnedSession={pinnedSession}
