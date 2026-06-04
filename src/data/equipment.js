@@ -107,7 +107,7 @@ export const EQUIPMENT_BY_CATEGORY = {
     },
     {
       brand: 'Ping',
-      models: ['Blueprint S', 'i230', 'i530', 'G730'],
+      models: ['G400', 'G440', 'G730','i230', 'i530'],
     },
     {
       brand: 'Mizuno',
@@ -158,7 +158,7 @@ export const EQUIPMENT_BY_CATEGORY = {
     },
     {
       brand: 'Ping',
-      models: ['s159', 'Glide 4.0', 'Glide Forged Pro'],
+      models: ['s159', 'Glide 4.0', 'G440', 'Glide Forged Pro'],
     },
   ],
 };

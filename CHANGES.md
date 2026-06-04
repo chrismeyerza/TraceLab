@@ -1,113 +1,161 @@
-# Changes — Type chips, orphan fix, cascade delete (PR 4.17.2)
+# Changes — Equipment-as-bag-property (PR 4.18)
 
-Three fixes for the cross-device workflow problems you flagged. Version
-bumped to **1.7.2**.
+The big conceptual change we discussed. Equipment is no longer a per-shot
+field you edit. It's a property of which club hit the shot, configured
+once per user in Settings as your "bag." Version bumped to **1.8.0**.
 
-## 1. All 8 shot type chips always visible
+## The new model
 
-**Before:** The TYPES filter row only showed chips for shot types that
-already existed in your data. Fresh imports start with everything as
-`full`, so you'd only see one chip — making it impossible to filter to
-"show me my pitches" until you'd already tagged at least one pitch.
-Chicken and egg.
-
-**After:** All 8 type chips render every time (Full, 3/4, Half, Pitch,
-Chip, Bunker, Flop, Other). Types with no shots in the current scope
-appear dimmed (45% opacity) with a tooltip "No shots tagged Pitch yet"
-— so you can still see which categories have data, but you can always
-filter to any type.
-
-## 2. Cascade-aware user deletion
-
-**Before:** Delete a user → native `confirm("their shots stay in the
-database but become unattributed")` → user deleted, shots orphaned.
-Then nothing in the UI shows you what to do about the orphaned data.
-
-**After:** Delete a user → DeleteUserModal opens with a real choice:
-
-- **Reassign & delete** (default, safe) — pick another player to move
-  all their shots to, then delete the profile. No data loss.
-- **Delete with shots…** — high-friction destructive option. Requires
-  typing the player's name to confirm. Use for genuine mistakes (test
-  data, accidental imports).
-- **Cancel** — do nothing.
-
-For users with zero shots, the modal simplifies to just Delete / Cancel
-— no reassign question because there's nothing to reassign.
-
-If you're deleting the currently active user, the app switches active
-to whichever player you reassigned to (or, in the destructive path, to
-whichever player remains).
-
-## 3. Re-attribute orphaned shots — Settings action
-
-**The actual fix to your situation.** After restoring a v1 backup on a
-fresh device, the shots come along but their `userId` references point
-at user records that don't exist on this device. The shots appear with
-no player assigned.
-
-**New Settings section** — appears only when orphans exist:
+**Your bag** lives in Settings → Bag. It maps each club to its equipment:
 
 ```
-Data attribution
-
-⚠ 96 shots reference a player that doesn't exist on this device.
-Typical after restoring a backup from another device — the shots came
-along, but their player record didn't.
-
-[ Re-attribute to active player ]
+Dr   → Callaway Rogue ST
+3w   → Callaway Paradym
+7i   → Ping i230
+54°  → Vokey SM11
 ```
 
-One click moves all orphaned shots onto the currently active player.
-Same effect as the DevTools snippet I gave you earlier, but built into
-the UI so future users don't have to touch the console.
+**On import**, each new shot gets its equipment stamped from your current
+bag at that moment. If the club isn't in your bag, equipment stays null.
 
-The section disappears once orphans are cleared.
+**On club reassignment**, equipment auto-follows. Reassigning a shot from
+7i → 8i updates its equipment to your 8i bag entry (or null if 8i isn't
+in the bag).
 
-## Implementation note: how "orphan" is defined
+**Equipment is a snapshot.** Changing your bag tomorrow does NOT
+retroactively update old shots. Old shots keep whatever equipment was
+stamped at the time. This is what lets you compare old gear vs new gear
+via the equipment filter — both values exist in your data as historical
+truth.
 
-A shot is orphaned if:
-- `userId` is missing (legacy shots before user identity was added), OR
-- `userId` is set but doesn't match any user in localStorage (cross-device
-  restore where users didn't come along — the v1-backup case)
+## What's gone
 
-`surveyOrphanedShots()` in `lib/users.js` is the single source of truth;
-both the count in Settings and the re-attribute action use it.
+The per-shot equipment editing in the Shots view is removed:
+
+- **No more inline EQUIP picker** — the column is read-only now
+- **No more "Set equipment" bulk action** — removed from the action bar
+
+The EQUIP column still shows you what each shot was stamped with — useful
+for verification, and the equipment filter still works as before.
+
+## Migration on first 1.8.0 boot
+
+Your existing equipment tags don't get lost. When you load the app for
+the first time on 1.8.0:
+
+1. For each user, your bag is **seeded from your existing shot data** —
+   for each club, whichever equipment value appears most often becomes
+   the bag entry. So if 9 out of 10 of your 7i shots are tagged "Ping
+   i230", your bag's 7i → Ping i230.
+2. **Existing shots keep their stamped values** — nothing changes in
+   the database. The bag is a new layer on top.
+3. **No prompts, no popups** — it just works.
+
+The seeding is idempotent (won't overwrite a bag entry you set yourself
+afterwards) and only runs once per user via a localStorage flag.
+
+## Where to find it
+
+**Settings → Bag.** The gear icon in the top bar → scroll to the new
+"Bag" section. Lists your clubs (only ones you have shots for) with
+their equipment. Click any equipment value to change it; the picker is
+category-aware (a wedge row only shows wedge brands, etc).
+
+**Add club to bag** — for clubs you haven't hit yet but want to
+pre-populate. Useful before importing data for a club for the first
+time, so the import gets the equipment stamp right.
+
+## Edge cases handled
+
+### "I imported a club that wasn't in my bag"
+
+Those shots have equipment = null (since the bag had nothing to say).
+Bag panel shows them as "missing equipment":
+
+```
+Settings → Bag
+
+⚠ 12 shots have no equipment tagged but their club is now in your bag.
+
+[ Fill missing equipment from bag ]
+```
+
+After you add the new club to your bag, one click backfills the missing
+equipment on the shots. Only NULL equipment fields are filled — shots
+already tagged stay as-is (snapshot integrity preserved).
+
+### "I want to compare new irons to old irons"
+
+Buy new irons → update your bag (`7i → Ping i230` instead of `Ping i530`).
+Import future sessions. Old shots stay tagged `Ping i530`, new shots
+get tagged `Ping i230`. Both values appear as chips in the EQUIPMENT
+filter row — click either to compare.
+
+### "I want to track a demo session"
+
+Use **free-form tags**, not equipment. Tag the shots `demo: ping G740`
+or whatever. Your bag stays correct; the demo shots are searchable via
+the TAGS filter row. Don't put demos in your bag.
+
+### "I reassigned a club to one not in my bag"
+
+The shot's equipment is set to null (the bag is authoritative). To
+re-stamp it: add the new club to your bag, then run "Fill missing
+equipment from bag."
 
 ## Files modified
 
 | File | What changed |
 |---|---|
-| `src/lib/users.js` | New `surveyOrphanedShots()` and `reattributeOrphans()` helpers |
-| `src/components/FilterBar.jsx` | All 8 type chips always rendered; empty ones dimmed; `clickType` and `typesActive` use `SHOT_TYPE_KEYS` (full set) not `availableTypes` (data-only) |
-| `src/components/DeleteUserModal.jsx` | **NEW** — three-mode modal: choose, confirmingDestroy, simple (zero shots) |
-| `src/components/SettingsPanel.jsx` | New orphans section appears when count > 0; "Re-attribute to active player" button |
-| `src/App.jsx` | Native-confirm delete flow replaced with state-driven modal opening; `handleReassignAndDelete` and `handleDeleteWithShots` action handlers; `handleReattributeOrphans`; `orphanCount` memo; new state `userToDelete`; imports for DeleteUserModal, surveyOrphanedShots, reattributeOrphans |
-| `package.json` | 1.7.1 → 1.7.2 |
+| `src/lib/bag.js` | **NEW** — getBag, setBag, setBagEntry, getBagEntry, deleteBag, seedBagFromShots, stampEquipmentFromBag |
+| `src/components/BagPanel.jsx` | **NEW** — per-user bag editor: club rows, category-aware inline picker, add-club affordance, fill-missing escape hatch |
+| `src/components/SettingsPanel.jsx` | Renders BagPanel for the active user; accepts new bag-related props |
+| `src/views/ShotsView.jsx` | Inline EQUIP picker removed; bulk "Set equipment" action and panel removed; editingEquip and bulkEquipOpen state removed; equipment cell falls through to default read-only rendering |
+| `src/App.jsx` | Bag state + derivations (activeBag, activeUserClubs, standardClubLabels, missingEquipmentCount); stamping in commitImport; club-reassign auto-fill via augmentPatchWithBagEquipment; bag seeding migration on boot (per-user, idempotent); handleSetBagEntry, handleFillMissingEquipment handlers; deleteBag called when a user is deleted |
+| `src/index.css` | Bag panel styles |
+| `package.json` | 1.7.2 → 1.8.0 (minor bump — new conceptual feature) |
 
 ## Verified
 
 - Production build clean
-- `surveyOrphanedShots` smoke-tested: correctly classifies missing-userId,
-  unknown-userId (multiple distinct), and present-but-known
-- All 8 type chips render including for types with zero shots in scope
+- Bag library smoke-tested:
+  - Empty bag, get/set/clear entries
+  - Majority-wins seeding from shots (tie-broken alphabetically)
+  - Existing bag entries preserved during seed
+  - Stamping fills empty equipment when bag has entry, leaves alone when not
+
+## What this does NOT change
+
+- **Equipment filter** still works exactly as before — narrows shots by
+  equipment value
+- **Existing shots** are not touched; your historical data is intact
+- **Tags** unchanged — they remain the right tool for demos, conditions,
+  ad-hoc context
+- **All analysis views** (Strike, Distance, Flight, Shape, Overview)
+  unchanged — they use the equipment field same as before
 
 ## Apply
 
-Branch: `feature/pr4-17-2-orphans-and-cascade-delete`. Layers on top of
-PR 4.17.
+Branch: `feature/pr4-18-bag-as-property`. Layers on top of PR 4.17.2.
 
-## How to use immediately
+## What to test
 
-If you already ran the DevTools snippet, the orphan count should now be
-0 — meaning the new Settings section won't appear. To verify it's
-working in your data, the proof points are:
+1. Apply, restart, navigate to Settings → see your bag has been
+   auto-seeded from your existing data. Each club should show its
+   most-common equipment value.
+2. Try editing a bag entry — change 7i → something different. Save.
+   Go back to Shots view. Your existing 7i shots should still show the
+   OLD value (snapshot preserved).
+3. Import a new session for that club (if you have one to test with).
+   The new shots should get tagged with the NEW bag value.
+4. Try reassigning a shot's club from 7i → 8i. Equipment should auto-
+   update to your 8i bag entry.
+5. Try the Shots view EQUIP column — should be display-only (no click
+   handler).
+6. Check the bulk actions bar — "Set equipment" button should be gone.
 
-1. **Settings panel** — open it. The "Data attribution" amber section
-   should NOT appear (since you re-attributed). All your players list
-   cleanly.
-2. **TYPES filter row** — should show all 8 chips. Pitch, Chip, etc
-   should appear (dimmed if no shots tagged that way yet) and be
-   clickable.
-3. **Delete a player** (if you want to clean up further) — should now
-   open the modal with proper reassign vs delete-with-shots options.
+## What's next
+
+- **PR 4.19 — Trends view** (the per-club fingerprint + drift-over-time
+  view we discussed). Parked in backlog with full design.
+- Column reordering in Shots view (still on backlog).

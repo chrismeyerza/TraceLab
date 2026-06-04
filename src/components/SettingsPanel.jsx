@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import BagPanel from './BagPanel';
 
 /**
  * Settings popover hung off the gear icon in the TopBar. Currently houses
@@ -16,6 +17,12 @@ export default function SettingsPanel({
   // Typical after restoring a v1 backup on a fresh device. Pass null to
   // hide the orphans section entirely (e.g. while loading).
   orphanCount, onReattributeOrphans,
+  // Bag editor — per-user equipment-by-club mapping. The panel renders
+  // a BagPanel for the active user (only one bag is editable at a time
+  // to keep the UI focused; users switch active player to edit their own).
+  activeUser, activeBag, onSetBagEntry,
+  userClubs, allClubLabels,
+  missingEquipmentCount, onFillMissingEquipment,
   onClose,
 }) {
   const ref = useRef();
@@ -90,6 +97,21 @@ export default function SettingsPanel({
           + Add player
         </button>
       </div>
+      {activeUser && (
+        <div className="settings-section">
+          <div className="settings-section-title">Bag</div>
+          <BagPanel
+            userId={activeUser.id}
+            userName={activeUser.name}
+            bag={activeBag || {}}
+            onSetEntry={onSetBagEntry}
+            userClubs={userClubs || []}
+            allClubLabels={allClubLabels || []}
+            missingCount={missingEquipmentCount || 0}
+            onFillMissing={onFillMissingEquipment}
+          />
+        </div>
+      )}
       {orphanCount > 0 && (
         <div className="settings-section">
           <div className="settings-section-title">Data attribution</div>

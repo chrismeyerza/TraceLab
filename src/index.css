@@ -213,6 +213,72 @@
   .scope-summary-chip.tone-equip { color: var(--blue); border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.08); }
   .scope-summary-chip.tone-tags { color: var(--purple); border-color: rgba(192,132,252,0.4); background: rgba(192,132,252,0.08); }
 
+  /* BAG PANEL --------------------------------------------------------- */
+  /* Per-user equipment-by-club editor that lives inside the Settings
+     panel. Each row is a club + equipment value; the equipment cell is
+     clickable to open an inline category-aware picker. */
+  .bag-panel { padding: 4px 0; }
+  .bag-header {
+    margin-bottom: 8px;
+  }
+  .bag-title {
+    font-family: 'Fraunces', serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .bag-subtitle {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+  .bag-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .bag-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    min-height: 30px;
+  }
+  .bag-row.editing {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+  }
+  .bag-row-club {
+    flex: 0 0 36px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+  .bag-row-equip { flex: 1; }
+  .bag-row-value {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .bag-row-value:hover {
+    background: var(--bg-elev-3);
+    color: var(--text-strong);
+  }
+
   /* WELCOME MODAL ----------------------------------------------------- */
   /* First-launch screen offering two paths: restore backup or create new
      profile. Cards are tap targets — large, clearly clickable, with a
