@@ -1,7 +1,7 @@
 {
   "name": "tracelab",
   "private": true,
-  "version": "1.9.3",
+  "version": "1.9.4",
   "type": "module",
   "description": "Launch monitor analytics for Foresight GCQuad MAX / FSX Play",
   "scripts": {

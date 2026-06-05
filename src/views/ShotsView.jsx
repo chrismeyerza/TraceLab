@@ -250,7 +250,9 @@ const makeColumns = (units, userName) => ({
 });
 
 // Tab definitions reference column keys from makeColumns(). Order matters
-// here — it's the on-screen left-to-right order.
+// here — it's the default on-screen left-to-right order. The user can
+// then customise the order per-tab via drag-and-drop; their override is
+// persisted in localStorage (see loadColumnOrder / saveColumnOrder).
 const TABS = {
   summary: {
     label: 'Summary',
@@ -278,6 +280,34 @@ const TABS = {
   },
 };
 
+/**
+ * Read a saved column order from localStorage for a given tab. Validates
+ * that the saved order contains exactly the same column keys as the
+ * current default — if a TABS update added or removed a column since the
+ * order was saved, the stored order is rejected and the default returned.
+ * This avoids the "blank column" bug if defaults shift.
+ */
+function loadColumnOrder(tabKey, defaultCols) {
+  try {
+    const raw = localStorage.getItem(`tracelab_shot_cols_${tabKey}`);
+    if (!raw) return defaultCols;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length !== defaultCols.length) return defaultCols;
+    const sortedParsed = [...parsed].sort().join(',');
+    const sortedDefaults = [...defaultCols].sort().join(',');
+    if (sortedParsed !== sortedDefaults) return defaultCols;
+    return parsed;
+  } catch {
+    return defaultCols;
+  }
+}
+
+function saveColumnOrder(tabKey, order) {
+  try {
+    localStorage.setItem(`tracelab_shot_cols_${tabKey}`, JSON.stringify(order));
+  } catch {}
+}
+
 export default function ShotsView({ shots, units, allClubs, users, availableTagsList, onUpdateShot, onUpdateShots, onDeleteShot }) {
   const [tab, setTab] = useState('summary');
   const [sortKey, setSortKey] = useState('createdAt');
@@ -304,6 +334,61 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
 
   const columns = useMemo(() => makeColumns(units, userName), [units, userName]);
   const tabConfig = TABS[tab];
+
+  // Column-reorder state (PR 4.19.4). The user can drag column headers in
+  // the data table to reorder them. The order is persisted per-tab in
+  // localStorage so each tab (Summary / Ball / Club) can have its own
+  // layout. Default falls back to TABS[tab].cols.
+  //
+  // The 'when' column is excluded from drag/drop — it's the date stamp
+  // and always belongs first. Same applies to the checkbox / actions
+  // columns at the edges.
+  const [columnOrder, setColumnOrder] = useState(() => loadColumnOrder(tab, TABS[tab].cols));
+  useEffect(() => {
+    setColumnOrder(loadColumnOrder(tab, TABS[tab].cols));
+  }, [tab]);
+  // During-drag state. draggingCol is the key of the column being moved;
+  // dropTargetCol is the column the user is hovering over (gets a visual
+  // hint). Both reset on dragend.
+  const [draggingCol, setDraggingCol] = useState(null);
+  const [dropTargetCol, setDropTargetCol] = useState(null);
+
+  function handleColDragStart(e, colKey) {
+    if (colKey === 'when') return; // 'when' isn't reorderable
+    setDraggingCol(colKey);
+    e.dataTransfer.effectAllowed = 'move';
+    // Some browsers need data set to register the drag. Empty string fine.
+    try { e.dataTransfer.setData('text/plain', colKey); } catch {}
+  }
+  function handleColDragOver(e, colKey) {
+    if (!draggingCol || colKey === 'when' || colKey === draggingCol) return;
+    e.preventDefault();
+    setDropTargetCol(colKey);
+  }
+  function handleColDrop(e, colKey) {
+    e.preventDefault();
+    if (draggingCol && draggingCol !== colKey && colKey !== 'when') {
+      const next = [...columnOrder];
+      const fromIdx = next.indexOf(draggingCol);
+      const toIdx = next.indexOf(colKey);
+      if (fromIdx >= 0 && toIdx >= 0) {
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, draggingCol);
+        setColumnOrder(next);
+        saveColumnOrder(tab, next);
+      }
+    }
+    setDraggingCol(null);
+    setDropTargetCol(null);
+  }
+  function handleColDragEnd() {
+    setDraggingCol(null);
+    setDropTargetCol(null);
+  }
+  function resetColumnOrder() {
+    setColumnOrder(TABS[tab].cols);
+    saveColumnOrder(tab, TABS[tab].cols);
+  }
 
   // If user switches to a tab that doesn't include the current sortKey,
   // fall back gracefully. createdAt is always present so it's safe.
@@ -341,17 +426,45 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
   };
 
   // Render a column header with sort indicator
-  const renderHeader = (col) => (
-    <th
-      key={col.key}
-      onClick={() => toggleSort(col.key)}
-      className={col.num ? 'num' : ''}
-      style={{ cursor: 'pointer', userSelect: 'none' }}
-    >
-      {col.label}
-      {activeSortKey === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-    </th>
-  );
+  /**
+   * Render a sortable column header. The `colKey` argument is the key used
+   * for drag-and-drop reordering (defaults to col.key but can differ for
+   * special columns like 'when' which has its own column object but no
+   * meaningful reorder behaviour). Pass `draggable={false}` to opt a
+   * column out of reordering entirely.
+   */
+  const renderHeader = (col, colKey = col.key, opts = {}) => {
+    const draggable = opts.draggable !== false;
+    const isDragging = draggingCol === colKey;
+    const isDropTarget = dropTargetCol === colKey;
+    return (
+      <th
+        key={col.key}
+        onClick={() => toggleSort(col.key)}
+        className={col.num ? 'num' : ''}
+        draggable={draggable}
+        onDragStart={draggable ? (e) => handleColDragStart(e, colKey) : undefined}
+        onDragOver={draggable ? (e) => handleColDragOver(e, colKey) : undefined}
+        onDrop={draggable ? (e) => handleColDrop(e, colKey) : undefined}
+        onDragEnd={draggable ? handleColDragEnd : undefined}
+        style={{
+          cursor: draggable ? 'grab' : 'pointer',
+          userSelect: 'none',
+          opacity: isDragging ? 0.4 : 1,
+          // Visual drop-target hint: a green left border indicating the
+          // dragged column will land here. Subtle but discoverable.
+          borderLeft: isDropTarget ? '2px solid var(--green)' : undefined,
+          // Keep the layout stable when the border appears — collapse the
+          // extra width by reducing left padding by the same amount.
+          paddingLeft: isDropTarget ? 'calc(0.5em - 2px)' : undefined,
+        }}
+        title={draggable ? 'Click to sort, drag to reorder' : 'Click to sort'}
+      >
+        {col.label}
+        {activeSortKey === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+      </th>
+    );
+  };
 
   return (
     <>
@@ -365,7 +478,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
         </div>
       </div>
 
-      <div className="shots-tabs">
+      <div className="shots-tabs" style={{ display: 'flex', alignItems: 'center' }}>
         {Object.entries(TABS).map(([key, t]) => (
           <button
             key={key}
@@ -376,6 +489,19 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
             <span className="shots-tab-count">· {t.cols.length} cols</span>
           </button>
         ))}
+        {/* Reset-order affordance — only visible when the user has actually
+            customised the column order. Keeps the UI quiet when defaults
+            are in use, surfaces the escape hatch when needed. */}
+        {JSON.stringify(columnOrder) !== JSON.stringify(TABS[tab].cols) && (
+          <button
+            className="btn-secondary"
+            style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 10 }}
+            onClick={resetColumnOrder}
+            title="Restore default column order for this tab"
+          >
+            ↺ RESET COLUMNS
+          </button>
+        )}
       </div>
 
       {selected.size > 0 && (
@@ -482,11 +608,11 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                   />
                 </th>
                 {/* When column comes first, then Club (special), then the rest */}
-                {renderHeader(columns.when)}
+                {renderHeader(columns.when, 'when', { draggable: false })}
                 <th onClick={() => toggleSort('club')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                   CLUB{activeSortKey === 'club' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
                 </th>
-                {tabConfig.cols.filter((c) => c !== 'when').map((c) => renderHeader(columns[c]))}
+                {columnOrder.filter((c) => c !== 'when').map((c) => renderHeader(columns[c], c))}
                 <th></th>
               </tr>
             </thead>
@@ -530,7 +656,7 @@ export default function ShotsView({ shots, units, allClubs, users, availableTags
                       />
                     )}
                   </td>
-                  {tabConfig.cols.filter((c) => c !== 'when').map((c) => {
+                  {columnOrder.filter((c) => c !== 'when').map((c) => {
                     const col = columns[c];
                     const style = col.cellStyle ? col.cellStyle(s) : (col.style || {});
                     // shotType and equipment are inline-editable: clicking the
