@@ -67,6 +67,30 @@ export const OPTIMAL_WINDOWS = {
   'LW':  { clubSpeed:[55,65,75,85], ballSpeed:[60,72,88,100], smash:[1.03,1.10,1.20,1.28],
            launch:[26,30,38,46], spin:[9500,10500,12000,14000], descent:[46,52,60,70],
            peakHeight:[14,18,26,34], aoa:[-10,-8,-5,-2], carry:[50,65,85,105] },
+  // Degree-labelled wedges. These get interpolated benchmarks based on their
+  // loft relative to the named wedges. A 50° sits between PW (~45°) and GW
+  // (~52°), a 54° between GW and SW (~56°), and so on. Without these entries,
+  // shots labelled "50°" / "52°" etc fell back to the 7i benchmark, which is
+  // why launch angle was showing 16-20° for wedges — completely wrong.
+  // Confirmed with user 2026-06.
+  '50°': { clubSpeed:[68,77,87,97], ballSpeed:[82,96,112,126], smash:[1.09,1.19,1.27,1.33],
+           launch:[22,26,32,37], spin:[8000,9300,10800,12300], descent:[41,47,54,61],
+           peakHeight:[19,25,33,41], aoa:[-7.5,-5.5,-3.5,-1.5], carry:[82,102,122,138] },
+  '52°': { clubSpeed:[65,75,85,95], ballSpeed:[78,92,108,122], smash:[1.08,1.18,1.26,1.32],
+           launch:[24,28,34,38], spin:[8500,9500,11000,12500], descent:[42,48,55,62],
+           peakHeight:[18,24,32,40], aoa:[-8,-6,-4,-2], carry:[75,95,115,130] },
+  '54°': { clubSpeed:[63,73,83,93], ballSpeed:[74,87,103,117], smash:[1.07,1.17,1.25,1.31],
+           launch:[26,30,36,39], spin:[8750,9750,11250,12750], descent:[43,49,57,64],
+           peakHeight:[17,23,31,39], aoa:[-8.5,-6.5,-4,-2], carry:[70,87,107,125] },
+  '56°': { clubSpeed:[60,70,80,90], ballSpeed:[70,82,98,112], smash:[1.05,1.15,1.24,1.30],
+           launch:[28,32,38,40], spin:[9000,10000,11500,13000], descent:[44,50,58,65],
+           peakHeight:[16,22,30,38], aoa:[-9,-7,-4,-2], carry:[65,80,100,120] },
+  '58°': { clubSpeed:[57,67,77,87], ballSpeed:[65,77,93,106], smash:[1.04,1.12,1.22,1.29],
+           launch:[30,34,40,43], spin:[9250,10250,11750,13500], descent:[45,51,59,67],
+           peakHeight:[15,20,28,36], aoa:[-9.5,-7.5,-4.5,-2], carry:[57,72,92,112] },
+  '60°': { clubSpeed:[55,65,75,85], ballSpeed:[60,72,88,100], smash:[1.03,1.10,1.20,1.28],
+           launch:[32,36,42,46], spin:[9500,10500,12000,14000], descent:[46,52,60,70],
+           peakHeight:[14,18,26,34], aoa:[-10,-8,-5,-2], carry:[50,65,85,105] },
 };
 
 /** Resolve a benchmark window for a club, falling back to 7i if unknown. */

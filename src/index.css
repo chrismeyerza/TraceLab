@@ -295,10 +295,15 @@
     pointer-events: none;
   }
   .trend-range-bin {
+    /* Bins use the green accent at varying alpha so density reads as
+       "more saturated green = more shots here." The previous design used
+       neutral text-colour fills which made dense bins look LIGHTER (more
+       text-on-dark contrast), confusing users into reading the chart
+       backwards. Green also visually links the heatmap to the today dot. */
     position: absolute;
     top: 0;
     bottom: 0;
-    background: var(--text);
+    background: var(--green);
   }
   .trend-range-mean {
     position: absolute;

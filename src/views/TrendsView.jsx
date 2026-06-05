@@ -352,6 +352,9 @@ function FingerprintCard({ metric, baseline, pinned }) {
                 if (maxCount === 0) return null;
                 return hist.bins.map((count, i) => {
                   const alpha = count / maxCount;
+                  // Wide alpha range (0.08 - 0.85) so empty bins fade
+                  // toward transparent and dense bins read clearly saturated.
+                  // The eye reads "most shots here" without thinking.
                   return (
                     <div
                       key={i}
@@ -359,7 +362,7 @@ function FingerprintCard({ metric, baseline, pinned }) {
                       style={{
                         left: `${(i / hist.nBins) * 100}%`,
                         width: `${(1 / hist.nBins) * 100}%`,
-                        opacity: 0.15 + alpha * 0.55,
+                        opacity: 0.08 + alpha * 0.77,
                       }}
                     />
                   );
