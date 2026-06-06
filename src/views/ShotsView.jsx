@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { clubColor, orderedClubs, normalizeClubName } from '../lib/clubs';
 import { convertSpeed, convertDistance, speedLabel, distLabel } from '../lib/units';
 import { formatPath } from '../lib/shape';
