@@ -167,7 +167,12 @@ export function clubCategory(club) {
   if (['PW', 'GW', 'SW', 'LW'].includes(c)) return 'wedge';
   // Numeric loft names (e.g. "50°", "56°") — treat as wedges.
   if (/^\d+°$/.test(club)) return 'wedge';
-  return 'iron'; // safe fallback
+  // Putter — its own category. Previously fell through to the 'iron'
+  // safe-fallback, which caused Pt to appear under iron-categorised
+  // pickers and rows. Now returns 'putter' so the UI can hide it
+  // entirely where it doesn't belong (the bag editor in particular).
+  if (c === 'Pt') return 'putter';
+  return 'iron'; // safe fallback for genuinely unknown clubs
 }
 
 /**

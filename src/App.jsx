@@ -218,6 +218,48 @@ export default function App() {
     return count;
   }, [shots, activeUserId, activeBag]);
 
+  // Fingerprint of the current overwrite-state. The dismissal of the
+  // amber "Overwrite from bag" prompt is keyed on this — when the
+  // fingerprint changes (e.g. user changes another bag entry, more shots
+  // disagree), the prompt re-appears for the new state.
+  //
+  // Components of the fingerprint:
+  //   - active user id (don't carry dismissals across users)
+  //   - count of disagreeing shots
+  //   - hash of bag entries (so changing the bag invalidates the dismissal)
+  //
+  // Storage layout: localStorage['tracelab_overwrite_dismissed_<userId>'] =
+  // the fingerprint that was dismissed. If current fingerprint matches,
+  // hide. If not, show.
+  const overwriteFingerprint = useMemo(() => {
+    if (!activeUserId || overwriteCount === 0) return null;
+    // Stable representation of the bag — sorted key:value pairs joined.
+    const bagSig = Object.entries(activeBag)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('|');
+    return `${activeUserId}:${overwriteCount}:${bagSig}`;
+  }, [activeUserId, overwriteCount, activeBag]);
+
+  const [overwriteDismissedFingerprint, setOverwriteDismissedFingerprint] = useState(null);
+  useEffect(() => {
+    if (!activeUserId) {
+      setOverwriteDismissedFingerprint(null);
+      return;
+    }
+    const stored = localStorage.getItem(`tracelab_overwrite_dismissed_${activeUserId}`);
+    setOverwriteDismissedFingerprint(stored);
+  }, [activeUserId]);
+
+  const overwriteDismissed = overwriteFingerprint !== null
+    && overwriteDismissedFingerprint === overwriteFingerprint;
+
+  function handleDismissOverwrite(fingerprint) {
+    if (!activeUserId || !fingerprint) return;
+    localStorage.setItem(`tracelab_overwrite_dismissed_${activeUserId}`, fingerprint);
+    setOverwriteDismissedFingerprint(fingerprint);
+  }
+
   // Count shots whose userId points at a user that doesn't exist on this
   // device. Surfaces in Settings when > 0 so the user can one-click reassign
   // them to the active player. Typical state after restoring a v1 backup
@@ -925,6 +967,9 @@ export default function App() {
           onFillMissingEquipment={handleFillMissingEquipment}
           overwriteCount={overwriteCount}
           onOverwriteFromBag={handleOverwriteFromBag}
+          overwriteFingerprint={overwriteFingerprint}
+          overwriteDismissed={overwriteDismissed}
+          onDismissOverwrite={handleDismissOverwrite}
           onClose={() => setShowSettings(false)}
         />
       )}

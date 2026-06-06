@@ -24,6 +24,7 @@ export default function SettingsPanel({
   userClubs, allClubLabels,
   missingEquipmentCount, onFillMissingEquipment,
   overwriteCount, onOverwriteFromBag,
+  overwriteFingerprint, overwriteDismissed, onDismissOverwrite,
   onClose,
 }) {
   const ref = useRef();
@@ -113,6 +114,9 @@ export default function SettingsPanel({
             onFillMissing={onFillMissingEquipment}
             overwriteCount={overwriteCount || 0}
             onOverwriteFromBag={onOverwriteFromBag}
+            overwriteFingerprint={overwriteFingerprint}
+            overwriteDismissed={overwriteDismissed}
+            onDismissOverwrite={onDismissOverwrite}
           />
         </div>
       )}

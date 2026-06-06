@@ -39,6 +39,7 @@ export default function BagPanel({
   userClubs, allClubLabels,
   onFillMissing, missingCount,
   onOverwriteFromBag, overwriteCount,
+  overwriteFingerprint, overwriteDismissed, onDismissOverwrite,
 }) {
   const [editingClub, setEditingClub] = useState(null); // which club row is open
   const [addingClub, setAddingClub] = useState(false);
@@ -51,6 +52,12 @@ export default function BagPanel({
   // Rows to render: union of clubs the user has hit AND clubs in the bag
   // (a bag entry can exist for a club without shots yet, if the user
   // pre-populated it via Add). Sort by the user's club-order preference.
+  //
+  // Putter (`Pt`) is intentionally excluded — the bag is for analytics-
+  // tracked clubs only, and putter shots tend to come from ghost / setup
+  // hits on the launch monitor that the user doesn't want appearing in
+  // analysis. If somebody ever wants to track putter, they can add a
+  // `Pt` row via the "Add club to bag" affordance below.
   const rowClubs = (() => {
     const set = new Set([...(userClubs || []), ...Object.keys(bag || {})]);
     // Use the order from userClubs first (which respects clubs.js canonical
@@ -60,14 +67,15 @@ export default function BagPanel({
     for (const c of Object.keys(bag || {})) {
       if (!ordered.includes(c)) ordered.push(c);
     }
-    return ordered;
+    return ordered.filter((c) => c !== 'Pt');
   })();
 
   // Available clubs to ADD = standard labels minus those already in
   // userClubs or the bag. The user can still type/pick something arbitrary
   // if desired, but the dropdown surfaces standard options first.
+  // Pt also excluded here so the dropdown doesn't suggest adding the putter.
   const addable = (allClubLabels || []).filter(
-    (c) => !rowClubs.includes(c)
+    (c) => !rowClubs.includes(c) && c !== 'Pt'
   );
 
   return (
@@ -248,8 +256,16 @@ export default function BagPanel({
           existing stamped values. Used when the bag has been corrected after
           shots were imported with a wrong equipment value (e.g. seeded
           incorrectly during the v1.8 migration). Destructive — wipes the
-          snapshot semantic for the affected shots, so a clear confirmation. */}
-      {overwriteCount > 0 && (
+          snapshot semantic for the affected shots, so a clear confirmation.
+
+          The user can dismiss the prompt with "Keep historic shots as they
+          are" — the snapshot semantic IS the right answer for buying new
+          irons (you want old shots to stay tagged with old equipment so you
+          can compare via the equipment filter). The dismissal is keyed on
+          a fingerprint of the disagreement state, so if a NEW disagreement
+          emerges later (e.g. they edit a different bag entry), the prompt
+          reappears for that new state. */}
+      {overwriteCount > 0 && !overwriteDismissed && (
         <div style={{
           marginTop: 12,
           padding: 10,
@@ -263,25 +279,38 @@ export default function BagPanel({
           <div style={{ marginBottom: 8 }}>
             <strong style={{ color: 'var(--amber)' }}>{overwriteCount}</strong>{' '}
             shot{overwriteCount === 1 ? '' : 's'} are tagged with equipment
-            that doesn't match the current bag. Useful when you've corrected
-            a bag entry and want existing shots to follow.
+            that doesn't match the current bag. If you've just changed gear,
+            you probably want to keep the historic shots tagged with their
+            original equipment so you can compare old vs new via the
+            equipment filter.
           </div>
-          <button
-            className="btn-secondary"
-            style={{ width: '100%', padding: '6px 10px', fontSize: 11 }}
-            onClick={() => {
-              if (confirm(
-                'Overwrite equipment on ' + overwriteCount + ' shot' + (overwriteCount === 1 ? '' : 's') +
-                '?\n\nThis will replace their current equipment tags with whatever your bag says for their club. ' +
-                'Use this when the bag is now correct and you want existing shots to match.'
-              )) {
-                onOverwriteFromBag();
-              }
-            }}
-            title="Replace existing equipment values with what the bag says now"
-          >
-            Overwrite equipment from bag
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="btn-secondary"
+              style={{ flex: 1, padding: '6px 10px', fontSize: 11 }}
+              onClick={() => {
+                if (confirm(
+                  'Overwrite equipment on ' + overwriteCount + ' shot' + (overwriteCount === 1 ? '' : 's') +
+                  '?\n\nThis will replace their current equipment tags with whatever your bag says for their club. ' +
+                  'Use this ONLY when the bag is now correct and your historic shots were tagged wrong — ' +
+                  'NOT when you have just bought new clubs.'
+                )) {
+                  onOverwriteFromBag();
+                }
+              }}
+              title="Replace existing equipment values with what the bag says now"
+            >
+              Overwrite equipment from bag
+            </button>
+            <button
+              className="btn-secondary"
+              style={{ flex: 1, padding: '6px 10px', fontSize: 11 }}
+              onClick={() => onDismissOverwrite(overwriteFingerprint)}
+              title="Hide this prompt — historic shots keep their original equipment tags (recommended when you've changed gear)"
+            >
+              Keep historic shots as they are
+            </button>
+          </div>
         </div>
       )}
     </div>
