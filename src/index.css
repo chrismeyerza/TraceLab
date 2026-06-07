@@ -5,17 +5,22 @@
     --bg-elev-3: #1d2520;
     --border: #2a332e;
     --border-strong: #3a4640;
-    /* Five-tier text palette, mapped to information hierarchy:
-       text-strong  ~96% — headlines, big numbers, "this matters"
-       text         ~88% — body, ordinary chart labels, table values
-       text-dim     ~72% — supporting captions, secondary labels (was ~56%)
-       text-faint   ~55% — metadata, sub-text, range/n callouts (was ~36%)
-       text-mute    ~38% — actually disabled / decorative chrome only */
+    /* Five-tier text palette. Lifted in v1.9.6 — the previous dim tiers
+       (--text-faint at #889189, --text-mute at #5a6359) washed out
+       against the dark background, making filter labels, chip text,
+       table headers, and gauge captions read as disabled rather than
+       as ordinary UI chrome. New values give proper readability while
+       preserving the five-tier hierarchy.
+         text-strong  ~96% — headlines, big numbers, "this matters"
+         text         ~88% — body, ordinary chart labels, table values
+         text-dim     ~82% — supporting captions, secondary labels
+         text-faint   ~67% — metadata, range/n callouts, filter labels
+         text-mute    ~53% — actually disabled / decorative chrome only */
     --text-strong: #f2f6f3;
     --text: #dfe5e1;
-    --text-dim: #b1bbb4;
-    --text-faint: #889189;
-    --text-mute: #5a6359;
+    --text-dim: #d0d6d2;
+    --text-faint: #a8b0aa;
+    --text-mute: #888f88;
     --green: #4ade80;
     --green-deep: #16a34a;
     --green-glow: rgba(74, 222, 128, 0.15);
@@ -656,7 +661,7 @@
   .filter-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
-    color: var(--text-faint);
+    color: var(--text);
     text-transform: uppercase;
     letter-spacing: 0.14em;
     margin-right: 6px;
@@ -668,15 +673,15 @@
     font-size: 11px;
     font-weight: 600;
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
-    color: var(--text-faint);
+    color: var(--text);
     transition: all 0.15s;
     letter-spacing: 0.04em;
-    opacity: 0.5;
+    opacity: 0.85;
     cursor: pointer;
   }
-  .chip:hover { color: var(--text); border-color: var(--border-strong); opacity: 0.85; }
+  .chip:hover { color: var(--text-strong); border-color: var(--text-faint); opacity: 1; }
   .chip.active {
     color: var(--bg);
     background: var(--green);
@@ -811,7 +816,7 @@
   .data-table th {
     text-align: left;
     padding: 8px 10px;
-    color: var(--text-faint);
+    color: var(--text);
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0.12em;
