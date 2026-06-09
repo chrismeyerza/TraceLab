@@ -117,6 +117,11 @@ function SinglePlot({ shots, club, units }) {
   const sdH = stdev(h);
   const sdV = stdev(v);
   const bands = getStrikeBands(club);
+  // Putters (and any other club without strike-band data) get skipped here —
+  // face-impact analysis doesn't apply.
+  if (!bands) {
+    return <div className="muted" style={{ padding: 12, fontSize: 11 }}>No strike analysis for {club}.</div>;
+  }
   // Per-shot classifications, used for the count summary below
   const classified = shots.map((s) => classifyStrike(club, s.faceImpactH, s.faceImpactV));
   const bandCount = (b) => classified.filter((c) => c && c.band === b).length;

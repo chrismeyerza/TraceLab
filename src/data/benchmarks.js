@@ -189,9 +189,16 @@ export function clubCategory(club) {
  * semi-axes). So a strike right at the edge of the centred ellipse gives
  * 1.0; well outside gives >1.
  */
+
+
 export function classifyStrike(club, faceImpactH, faceImpactV) {
   if (faceImpactH == null || faceImpactV == null) return null;
   const bands = STRIKE_HV_BANDS[clubCategory(club)];
+  if (!bands) return null;  // putters and other un-bandwidth'd categories
+
+
+
+
   const absH = Math.abs(faceImpactH);
   const absV = Math.abs(faceImpactV);
 
@@ -229,7 +236,7 @@ export function classifyStrike(club, faceImpactH, faceImpactV) {
  * Used by the Strike view to draw the centred ellipse and the high/low cells.
  */
 export function getStrikeBands(club) {
-  return STRIKE_HV_BANDS[clubCategory(club)];
+  return STRIKE_HV_BANDS[clubCategory(club)] || null;
 }
 
 /**
